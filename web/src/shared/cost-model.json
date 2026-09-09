@@ -1,0 +1,311 @@
+{
+  "version": "1.1",
+  "updated": "2026-09-10",
+  "fx": {
+    "usd_inr": 84
+  },
+  "note": "Rates verified Sept 2026. Vertex bundles audio into the Veo price, so audio-off does not reduce the Vertex rate. fal and Replicate allow audio-off at a lower rate; verify on the provider page before switching.",
+  "providers": {
+    "vertex": {
+      "gemini-2.5-flash": {
+        "kind": "text_vision",
+        "usd_per_m_input": 0.3,
+        "usd_per_m_output": 2.5
+      },
+      "gemini-2.5-flash-lite": {
+        "kind": "text",
+        "usd_per_m_input": 0.1,
+        "usd_per_m_output": 0.4,
+        "note": "verify current rate; used for B2, B3, B7"
+      },
+      "gemini-2.5-flash-image": {
+        "kind": "image",
+        "usd_per_image_1024": 0.039,
+        "output_tokens_per_image": 1290,
+        "usd_per_m_image_output": 30.0
+      },
+      "veo-3.1-lite": {
+        "kind": "video",
+        "usd_per_s": 0.05,
+        "audio_bundled": true,
+        "note": "Vertex bundles audio. generateAudio:false does NOT reduce the rate. Confirmed by a real $0.40 charge for an 8s run.",
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "durations_s": [
+          4,
+          6,
+          8
+        ],
+        "last_frame_requires_duration_s": 8,
+        "aspects": [
+          "9:16",
+          "16:9"
+        ]
+      },
+      "veo-3.1-fast": {
+        "kind": "video",
+        "usd_per_s": 0.1
+      },
+      "veo-3.1": {
+        "kind": "video",
+        "usd_per_s": 0.4
+      }
+    },
+    "fal": {
+      "veo-3.1-lite-audio-off": {
+        "kind": "video",
+        "usd_per_s": 0.03,
+        "confidence": "unverified",
+        "verify_at": "fal model page"
+      },
+      "hailuo-02-standard": {
+        "kind": "video",
+        "usd_per_s": 0.045,
+        "resolution": "768p",
+        "durations_s": [
+          6,
+          10
+        ]
+      },
+      "ltx-2-fast": {
+        "kind": "video",
+        "usd_per_s": 0.04,
+        "resolution": "1080p",
+        "role": "draft"
+      },
+      "kling-2.5-turbo-pro": {
+        "kind": "video",
+        "usd_per_s": 0.07,
+        "role": "fallback"
+      }
+    },
+    "local": {
+      "depth-anything-v2-small": {
+        "kind": "depth",
+        "usd_per_image": 0
+      },
+      "ffmpeg": {
+        "kind": "render",
+        "usd": 0
+      },
+      "canvas-overlays": {
+        "kind": "render",
+        "usd": 0
+      }
+    }
+  },
+  "brain_nodes": [
+    {
+      "node": "B0",
+      "label": "photo classification",
+      "model": "gemini-2.5-flash",
+      "calls_formula": "ceil(photo_count/5)",
+      "in_tokens_per_call": 3500,
+      "out_tokens_per_call": 800
+    },
+    {
+      "node": "B1",
+      "label": "listing truth",
+      "model": "gemini-2.5-flash",
+      "calls": 1,
+      "in_tokens_per_call": 3000,
+      "out_tokens_per_call": 1200
+    },
+    {
+      "node": "B2",
+      "label": "tier and persona",
+      "model": "gemini-2.5-flash-lite",
+      "calls": 1,
+      "in_tokens_per_call": 1200,
+      "out_tokens_per_call": 400
+    },
+    {
+      "node": "B3",
+      "label": "format selection",
+      "model": "gemini-2.5-flash-lite",
+      "calls": 1,
+      "in_tokens_per_call": 1500,
+      "out_tokens_per_call": 500
+    },
+    {
+      "node": "B4",
+      "label": "hook selection",
+      "model": "gemini-2.5-flash",
+      "calls_formula": "reel_count",
+      "in_tokens_per_call": 1500,
+      "out_tokens_per_call": 900
+    },
+    {
+      "node": "B5",
+      "label": "shot list",
+      "model": "gemini-2.5-flash",
+      "calls": 1,
+      "in_tokens_per_call": 3000,
+      "out_tokens_per_call": 2000
+    },
+    {
+      "node": "B6",
+      "label": "copy",
+      "model": "gemini-2.5-flash",
+      "calls_formula": "reel_count",
+      "in_tokens_per_call": 2000,
+      "out_tokens_per_call": 800
+    },
+    {
+      "node": "B7",
+      "label": "music and pacing",
+      "model": "gemini-2.5-flash-lite",
+      "calls_formula": "reel_count",
+      "in_tokens_per_call": 1500,
+      "out_tokens_per_call": 1000
+    },
+    {
+      "node": "B8",
+      "label": "preflight phrase scan",
+      "model": "gemini-2.5-flash",
+      "calls": 1,
+      "in_tokens_per_call": 1500,
+      "out_tokens_per_call": 300
+    }
+  ],
+  "hook_path": {
+    "free_2p5d": {
+      "still": 0,
+      "q1": 0,
+      "clip": 0,
+      "q2": 0,
+      "usd_total": 0
+    },
+    "still_then_clip": {
+      "still": {
+        "model": "gemini-2.5-flash-image",
+        "images": 1
+      },
+      "q1": {
+        "model": "gemini-2.5-flash",
+        "in_tokens": 1600,
+        "out_tokens": 300
+      },
+      "clip": {
+        "model": "veo-3.1-lite",
+        "default_duration_s": 6
+      },
+      "q2": {
+        "model": "gemini-2.5-flash",
+        "in_tokens": 2800,
+        "out_tokens": 400
+      },
+      "reroll_allowance": 0.25,
+      "deprecated_for_concealment": "Produced a different building in testing. Use reverse_conceal."
+    },
+    "clip_only": {
+      "clip": {
+        "model": "veo-3.1-lite",
+        "default_duration_s": 6
+      },
+      "q2": {
+        "model": "gemini-2.5-flash",
+        "in_tokens": 2800,
+        "out_tokens": 400
+      },
+      "reroll_allowance": 0.25
+    },
+    "reverse_conceal": {
+      "desc": "VERIFIED path for concealment hooks. Still is the Veo lastFrame, which forces 8s on Vertex.",
+      "still": {
+        "model": "gemini-2.5-flash-image",
+        "images": 1
+      },
+      "q1": {
+        "model": "gemini-2.5-flash",
+        "in_tokens": 1600,
+        "out_tokens": 300
+      },
+      "clip": {
+        "model": "veo-3.1-lite",
+        "duration_s": 8,
+        "uses_last_frame": true
+      },
+      "q2": {
+        "model": "gemini-2.5-flash",
+        "in_tokens": 2800,
+        "out_tokens": 400
+      },
+      "reroll_allowance": 0.25
+    }
+  },
+  "hook_duration_by_concept_s": {
+    "blueprint_to_photo": 0,
+    "sky_drop": 0,
+    "paper_popup_room": 0,
+    "haze_reveal": 8,
+    "helicopter_drape": 8,
+    "block_build": 8,
+    "earth_to_doorstep": 8,
+    "dollhouse_plan_to_house": 4,
+    "unveiling_flyover": 4
+  },
+  "infra": {
+    "render_usd_per_listing": 0.007,
+    "storage_egress_usd_per_listing": 0.01,
+    "fixed_monthly_usd": {
+      "vercel_pro": 20,
+      "supabase_pro": 25,
+      "railway_worker": 20,
+      "r2_100gb": 1.5,
+      "music_licence_amortised": 25,
+      "total": 91.5
+    }
+  },
+  "presets": {
+    "free_hooks": {
+      "paid_hooks": 0,
+      "usd_per_listing": 0.065
+    },
+    "one_paid_hook": {
+      "paid_hooks": 1,
+      "usd_per_listing": 0.617,
+      "recommended": true
+    },
+    "three_paid_hooks": {
+      "paid_hooks": 3,
+      "usd_per_listing": 1.722
+    }
+  },
+  "credit_pool": {
+    "usd": 300,
+    "expires_days_from_account_creation": 90,
+    "listings_covered": {
+      "free_hooks": 4615,
+      "one_paid_hook": 486,
+      "three_paid_hooks": 174
+    }
+  },
+  "market_anchors": {
+    "rendy_partner_price_usd_for_3_reels": 75,
+    "rendy_over_delivers_reels": 6,
+    "per_reel_retail_usd": 25,
+    "videographer_per_property_usd": [
+      200,
+      500
+    ],
+    "competitor_per_image_usd": {
+      "amplifiles": 1.5,
+      "listing_reel_maker_credit": 2.5
+    },
+    "competitor_flat_monthly_usd": {
+      "reeltypro": 49,
+      "videotour_independent": 29,
+      "videotour_agency": 59
+    }
+  },
+  "guards": {
+    "warn_above_usd_per_listing": 1.5,
+    "block_above_usd_per_listing": 3.0,
+    "max_rerolls_per_hook": 1,
+    "on_second_failure": "fall back to free_2p5d hook"
+  },
+  "hook_duration_note": "8s is not a creative choice: Vertex requires durationSeconds=8 when lastFrame is supplied, and every reverse_conceal concept uses lastFrame."
+}

@@ -1,0 +1,20 @@
+# Build context is the REPO ROOT (Railway: Dockerfile Path service/Dockerfile).
+# Docker only honours the .dockerignore at the context root, so this is the only one.
+.git
+.DS_Store
+node_modules
+**/node_modules
+web/.next
+web/out
+stage0
+tmp
+data
+service/data
+service/assets/fonts/*.ttf
+service/assets/fonts/*.txt
+.env
+.env.*
+!.env.example
+sa.json
+*.mp4
+*.mov

@@ -14,3 +14,10 @@ stage0/hook.mp4
 *.mp4
 *.mov
 .DS_Store
+
+# D1
+service/data/
+service/assets/fonts/*.ttf
+service/assets/fonts/*.txt
+.playwright-mcp/
+frames*.json

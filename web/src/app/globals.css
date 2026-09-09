@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+/* The studio is dark by design: you are grading video against it. */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+}
+
+input[type="range"] {
+  accent-color: #f5b301;
+}
