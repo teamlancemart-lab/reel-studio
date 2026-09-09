@@ -1,0 +1,16 @@
+sa.json
+*.json.key
+.env
+.env.local
+.env.*
+!.env.example
+node_modules/
+.next/
+out/
+dist/
+tmp/
+stage0/still.png
+stage0/hook.mp4
+*.mp4
+*.mov
+.DS_Store
