@@ -1,0 +1,439 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "property-reel-brain/schemas/v1",
+  "$defs": {
+    "Market": { "type": "string", "enum": ["in", "us"] },
+    "Tier": { "type": "string", "enum": ["fast", "medium", "slow"] },
+    "Aspect": { "type": "string", "enum": ["9x16", "16x9"] },
+    "Crop": {
+      "type": "object",
+      "properties": {
+        "x_center": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y_center": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width_frac": { "type": "number", "minimum": 0, "maximum": 1 },
+        "keeps_feature": { "type": "string" }
+      },
+      "required": ["x_center", "y_center", "width_frac"]
+    },
+    "RoomClass": {
+      "type": "string",
+      "enum": ["exterior_front", "exterior_rear", "exterior_side", "aerial_34", "aerial_topdown", "aerial_wide", "foyer", "hallway", "stairs", "living", "dining", "kitchen", "primary_bedroom", "bedroom", "bathroom", "half_bath", "balcony_view", "terrace", "garage", "pool", "gym", "clubhouse", "garden", "floor_plan", "site_plan", "other"]
+    },
+    "SourceRef": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["fact", "observed", "special", "provable_number"] },
+        "id": { "type": "string" }
+      },
+      "required": ["kind", "id"]
+    },
+    "Card": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 40 },
+        "subtitle": { "type": "string", "maxLength": 70 },
+        "in_s": { "type": "number" },
+        "out_s": { "type": "number" },
+        "position": { "type": "string", "enum": ["lower_third", "center", "upper_third"] },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/SourceRef" } }
+      },
+      "required": ["title", "sources"]
+    },
+    "NodeMeta": {
+      "type": "object",
+      "properties": {
+        "node": { "type": "string" },
+        "version": { "type": "integer" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "model": { "type": "string" },
+        "cost_inr": { "type": "number" },
+        "parent_versions": { "type": "object", "additionalProperties": { "type": "integer" } },
+        "locked": { "type": "boolean" },
+        "stale": { "type": "boolean" }
+      },
+      "required": ["node", "version", "generated_at", "model", "cost_inr"]
+    }
+  },
+
+  "PhotoAsset": {
+    "type": "object",
+    "properties": {
+      "photo_id": { "type": "string" },
+      "filename": { "type": "string" },
+      "room_class": { "$ref": "#/$defs/RoomClass" },
+      "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+      "scores": {
+        "type": "object",
+        "properties": {
+          "sharpness": { "type": "number" }, "exposure": { "type": "number" }, "composition": { "type": "number" }
+        },
+        "required": ["sharpness", "exposure", "composition"]
+      },
+      "features": { "type": "array", "items": { "type": "string" }, "maxItems": 8 },
+      "flags": {
+        "type": "object",
+        "properties": {
+          "people_present": { "type": "boolean" },
+          "vehicles_present": { "type": "boolean" },
+          "pets_present": { "type": "boolean" },
+          "brand_logos_present": { "type": "boolean" },
+          "staging_suspected": { "type": "boolean" },
+          "text_overlay_present": { "type": "boolean" },
+          "watermark_present": { "type": "boolean" }
+        },
+        "required": ["people_present", "vehicles_present", "staging_suspected", "watermark_present"]
+      },
+      "safe_crop_9x16": { "$ref": "#/$defs/Crop" },
+      "safe_crop_16x9": { "$ref": "#/$defs/Crop" },
+      "hook_candidate": { "type": "boolean" },
+      "dedupe_key": { "type": "string" },
+      "width": { "type": "integer" }, "height": { "type": "integer" },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["photo_id", "room_class", "confidence", "scores", "features", "flags", "safe_crop_9x16", "hook_candidate", "dedupe_key"]
+  },
+
+  "ListingTruth": {
+    "type": "object",
+    "properties": {
+      "market": { "$ref": "#/$defs/Market" },
+      "facts": {
+        "type": "object",
+        "properties": {
+          "address_line": { "type": "string" },
+          "locality": { "type": "string" },
+          "city": { "type": "string" },
+          "region": { "type": "string", "description": "state or union territory" },
+          "country": { "type": "string" },
+          "price": { "type": "number" },
+          "currency": { "type": "string", "enum": ["INR", "USD"] },
+          "price_display": { "type": "string", "description": "e.g. ₹1.85 Cr or $789,900" },
+          "price_per_area": { "type": ["number", "null"] },
+          "beds": { "type": ["number", "null"] },
+          "baths": { "type": ["number", "null"] },
+          "area_value": { "type": ["number", "null"] },
+          "area_unit": { "type": "string", "enum": ["sqft", "sqm", "sqyd"] },
+          "area_basis": { "type": "string", "enum": ["carpet", "builtup", "super_builtup", "saleable", "lot", "unknown"] },
+          "property_type": { "type": "string", "enum": ["apartment", "builder_floor", "villa", "independent_house", "penthouse", "plot", "single_family", "condo", "townhouse", "multi_family", "other"] },
+          "status": { "type": "string", "enum": ["just_listed", "coming_soon", "open_house", "price_improved", "under_contract", "sold", "new_launch", "ready_to_move", "under_construction", "resale"] },
+          "year_built": { "type": ["integer", "null"] },
+          "possession_or_event_date": { "type": ["string", "null"] },
+          "event_time": { "type": ["string", "null"] },
+          "facing": { "type": ["string", "null"] },
+          "floor_number": { "type": ["string", "null"] },
+          "prior_price": { "type": ["number", "null"] },
+          "sale_date": { "type": ["string", "null"] },
+          "days_on_market": { "type": ["integer", "null"] },
+          "named_places": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "distance_text": { "type": "string" } }, "required": ["name"] } },
+          "luxury_criteria": { "type": ["string", "null"] },
+          "agent_name": { "type": "string" },
+          "agent_handle": { "type": ["string", "null"] },
+          "agent_phone_or_wa": { "type": ["string", "null"] },
+          "brokerage": { "type": ["string", "null"] },
+          "features_text": { "type": "string" }
+        },
+        "required": ["address_line", "city", "price", "currency", "price_display", "property_type", "status", "agent_name"]
+      },
+      "observed": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": { "id": { "type": "string" }, "text": { "type": "string" }, "photo_id": { "type": "string" } },
+          "required": ["id", "text", "photo_id"]
+        }
+      },
+      "specials": {
+        "type": "array", "minItems": 1, "maxItems": 5,
+        "items": {
+          "type": "object",
+          "properties": { "id": { "type": "string" }, "text": { "type": "string", "maxLength": 60 }, "source": { "$ref": "#/$defs/SourceRef" } },
+          "required": ["id", "text", "source"]
+        }
+      },
+      "never_claim": { "type": "array", "items": { "type": "string" } },
+      "provable_numbers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": { "id": { "type": "string" }, "label": { "type": "string" }, "display": { "type": "string" }, "source_field": { "type": "string" } },
+          "required": ["id", "label", "display", "source_field"]
+        }
+      },
+      "flags": {
+        "type": "object",
+        "properties": {
+          "area_basis_not_carpet": { "type": "boolean" },
+          "missing_rera_project": { "type": "boolean" },
+          "missing_rera_agent": { "type": "boolean" },
+          "missing_brokerage": { "type": "boolean" },
+          "staging_suspected_any": { "type": "boolean" }
+        }
+      },
+      "compliance_context": {
+        "type": "object",
+        "properties": {
+          "rera_project": { "type": ["string", "null"] },
+          "rera_agent": { "type": ["string", "null"] },
+          "rera_portal_url": { "type": ["string", "null"] },
+          "mls_number": { "type": ["string", "null"] },
+          "originals_url": { "type": ["string", "null"] },
+          "is_new_launch": { "type": "boolean" },
+          "is_under_construction": { "type": "boolean" },
+          "is_brokered": { "type": "boolean" },
+          "disclosure_required_us": { "type": "boolean" },
+          "disclosure_required_in": { "type": "boolean" },
+          "us_state": { "type": ["string", "null"] }
+        },
+        "required": ["is_new_launch", "is_under_construction", "is_brokered", "disclosure_required_us", "disclosure_required_in"]
+      },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["market", "facts", "observed", "specials", "never_claim", "provable_numbers", "flags", "compliance_context"]
+  },
+
+  "TierPersona": {
+    "type": "object",
+    "properties": {
+      "price_tier": { "type": "string", "enum": ["budget", "mid", "premium", "luxury", "entry", "upper"] },
+      "price_band_ref": { "type": "string" },
+      "buyer_intent": { "type": "string", "enum": ["first_home", "upgrade", "investor", "nri_remote", "relocation", "downsizer_by_size", "rental_yield"] },
+      "tone": { "type": "string", "enum": ["factual_fast", "warm_local", "premium_calm", "investor_numbers"] },
+      "type_voice": { "type": "string", "enum": ["sans_pill", "serif_smallcaps"] },
+      "music_energy": { "type": "string", "enum": ["low", "mid", "high"] },
+      "caption_density": { "type": "string", "enum": ["sparse", "normal", "dense"] },
+      "language": { "type": "string", "enum": ["en", "hinglish_overlay"] },
+      "rationale": { "type": "string", "maxLength": 200 },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["price_tier", "buyer_intent", "tone", "type_voice", "music_energy", "caption_density", "language"]
+  },
+
+  "FormatPlan": {
+    "type": "object",
+    "properties": {
+      "reels": {
+        "type": "array", "minItems": 3, "maxItems": 3,
+        "items": {
+          "type": "object",
+          "properties": {
+            "reel_n": { "type": "integer", "minimum": 1, "maximum": 3 },
+            "format_id": { "type": "string" },
+            "why": { "type": "string", "maxLength": 140 },
+            "score": { "type": "number" },
+            "required_assets": { "type": "array", "items": { "$ref": "#/$defs/RoomClass" } },
+            "title_card_system": { "type": "string", "enum": ["price_stack", "status_card", "address_only", "search_intent", "number_first"] },
+            "tier": { "$ref": "#/$defs/Tier" }
+          },
+          "required": ["reel_n", "format_id", "why", "title_card_system", "tier"]
+        }
+      },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["reels"]
+  },
+
+  "HookPlan": {
+    "type": "object",
+    "properties": {
+      "reel_n": { "type": "integer" },
+      "concept_id": { "type": "string" },
+      "scores": {
+        "type": "object",
+        "properties": {
+          "scroll_stop": { "type": "number" }, "engine_survival": { "type": "number" }, "compliance_fit": { "type": "number" }, "asset_fit": { "type": "number" }, "novelty": { "type": "number" }, "total": { "type": "number" }
+        },
+        "required": ["total"]
+      },
+      "ranked_alternatives": { "type": "array", "items": { "type": "object", "properties": { "concept_id": { "type": "string" }, "total": { "type": "number" } } } },
+      "source_photo_id": { "type": "string" },
+      "generation_path": { "type": "string", "enum": ["free_2p5d", "still_then_clip", "clip_only"] },
+      "engine": { "type": "string" },
+      "aspect": { "$ref": "#/$defs/Aspect" },
+      "emit_16x9_derivative": { "type": "boolean" },
+      "still_prompt": { "type": "string" },
+      "negative_prompt": { "type": "string" },
+      "clip_prompt": { "type": "string" },
+      "duration_s": { "type": "number" },
+      "usable_window_s": { "type": "object", "properties": { "start": { "type": "number" }, "end": { "type": "number" } }, "required": ["start", "end"] },
+      "truth_lock": { "type": "object", "properties": { "mode": { "type": "string", "enum": ["crossfade_to_source"] }, "frames": { "type": "integer", "minimum": 8, "maximum": 30 } }, "required": ["mode", "frames"] },
+      "disclosure_label": { "type": "string" },
+      "est_cost": { "type": "object", "properties": { "still_inr": { "type": "number" }, "clip_usd": { "type": "number" }, "retry_allowance_usd": { "type": "number" }, "total_usd": { "type": "number" } }, "required": ["total_usd"] },
+      "fal_payload_preview": { "type": "object" },
+      "qa_checks": { "type": "array", "items": { "type": "string" } },
+      "fallback_concept": { "type": "string" },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["reel_n", "concept_id", "scores", "source_photo_id", "generation_path", "engine", "aspect", "clip_prompt", "duration_s", "usable_window_s", "truth_lock", "disclosure_label", "est_cost", "qa_checks", "fallback_concept"]
+  },
+
+  "QAResult": {
+    "type": "object",
+    "properties": {
+      "target": { "type": "string", "enum": ["still", "clip"] },
+      "pass": { "type": "boolean" },
+      "counts": {
+        "type": "object",
+        "properties": {
+          "floors": { "type": "object", "properties": { "ref": { "type": "integer" }, "gen": { "type": "integer" } } },
+          "windows_front": { "type": "object", "properties": { "ref": { "type": "integer" }, "gen": { "type": "integer" } } },
+          "doors": { "type": "object", "properties": { "ref": { "type": "integer" }, "gen": { "type": "integer" } } },
+          "balconies": { "type": "object", "properties": { "ref": { "type": "integer" }, "gen": { "type": "integer" } } }
+        }
+      },
+      "roof_line_match": { "type": "boolean" },
+      "rejects_found": { "type": "array", "items": { "type": "string" } },
+      "last_frame_matches_source": { "type": ["boolean", "null"] },
+      "diff_notes": { "type": "string" },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["target", "pass", "rejects_found", "diff_notes"]
+  },
+
+  "ShotList": {
+    "type": "object",
+    "properties": {
+      "shots": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "shot_id": { "type": "string" },
+            "slot": { "type": "string", "enum": ["hook", "exterior_title", "proof", "interior", "amenity", "floor_plan", "exterior_return", "aerial_topdown", "aerial_wide", "cta_card"] },
+            "photo_id": { "type": ["string", "null"] },
+            "room_class": { "$ref": "#/$defs/RoomClass" },
+            "motion": { "type": "string" },
+            "direction": { "type": "string", "enum": ["push", "pull", "pan_l", "pan_r", "parallax", "static", "self_draw"] },
+            "duration_by_tier": { "type": "object", "properties": { "fast": { "type": "number" }, "medium": { "type": "number" }, "slow": { "type": "number" } }, "required": ["fast", "medium", "slow"] },
+            "crop_9x16": { "$ref": "#/$defs/Crop" },
+            "crop_16x9": { "$ref": "#/$defs/Crop" },
+            "caption_slot": { "type": "string", "enum": ["none", "fact", "title"] },
+            "why": { "type": "string", "maxLength": 100 }
+          },
+          "required": ["shot_id", "slot", "room_class", "motion", "direction", "duration_by_tier", "crop_9x16", "caption_slot"]
+        }
+      },
+      "exclusions": { "type": "array", "items": { "type": "object", "properties": { "photo_id": { "type": "string" }, "reason": { "type": "string" } }, "required": ["photo_id", "reason"] } },
+      "interior_count": { "type": "integer", "maximum": 6 },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["shots", "exclusions", "interior_count"]
+  },
+
+  "CopySet": {
+    "type": "object",
+    "properties": {
+      "reel_n": { "type": "integer" },
+      "type_voice": { "type": "string" },
+      "hook_card": { "$ref": "#/$defs/Card" },
+      "proof_card": { "$ref": "#/$defs/Card" },
+      "fact_captions": { "type": "array", "items": { "allOf": [{ "$ref": "#/$defs/Card" }, { "properties": { "shot_id": { "type": "string" } }, "required": ["shot_id"] }] } },
+      "floor_plan_card": { "$ref": "#/$defs/Card" },
+      "cta_card": {
+        "allOf": [
+          { "$ref": "#/$defs/Card" },
+          { "properties": { "agent_line": { "type": "string" }, "compliance_lines": { "type": "array", "items": { "type": "string" } }, "qr_payload": { "type": ["string", "null"] } }, "required": ["compliance_lines"] }
+        ]
+      },
+      "disclosure_overlay": { "type": "object", "properties": { "text": { "type": "string" }, "in_s": { "type": "number" }, "out_s": { "type": "number" }, "corner": { "type": "string", "enum": ["tl", "tr", "bl", "br"] } }, "required": ["text", "in_s", "out_s", "corner"] },
+      "post_caption": { "type": "string" },
+      "hashtags": { "type": "array", "minItems": 3, "maxItems": 5, "items": { "type": "string" } },
+      "claims_trace": { "type": "array", "items": { "type": "object", "properties": { "text": { "type": "string" }, "source": { "$ref": "#/$defs/SourceRef" } }, "required": ["text", "source"] } },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["reel_n", "hook_card", "cta_card", "disclosure_overlay", "post_caption", "hashtags", "claims_trace"]
+  },
+
+  "PacingPlan": {
+    "type": "object",
+    "properties": {
+      "reel_n": { "type": "integer" },
+      "tier": { "$ref": "#/$defs/Tier" },
+      "track_id": { "type": "string" },
+      "bpm": { "type": "number" },
+      "hook_length_s": { "type": "number" },
+      "drop_time_s": { "type": ["number", "null"] },
+      "cuts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": { "t": { "type": "number" }, "shot_id": { "type": "string" }, "transition": { "type": "string" }, "on_beat": { "type": "boolean" } },
+          "required": ["t", "shot_id", "transition"]
+        }
+      },
+      "stutter_block": { "type": ["object", "null"], "properties": { "start_s": { "type": "number" }, "shot_ids": { "type": "array", "items": { "type": "string" } }, "frame_len_s": { "type": "number" } } },
+      "total_length_s": { "type": "number", "minimum": 12, "maximum": 40 },
+      "dropped_shot_ids": { "type": "array", "items": { "type": "string" } },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["reel_n", "tier", "track_id", "bpm", "hook_length_s", "cuts", "total_length_s"]
+  },
+
+  "PreflightResult": {
+    "type": "object",
+    "properties": {
+      "stage": { "type": "string", "enum": ["pre_generation", "pre_export"] },
+      "pass": { "type": "boolean" },
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "rule_id": { "type": "string" },
+            "level": { "type": "string", "enum": ["BLOCK", "WARN", "PASS"] },
+            "reel_n": { "type": ["integer", "null"] },
+            "message": { "type": "string" },
+            "evidence": { "type": "string" },
+            "overridden_by": { "type": ["string", "null"] },
+            "overridden_at": { "type": ["string", "null"] }
+          },
+          "required": ["rule_id", "level", "message"]
+        }
+      },
+      "phrase_scan": { "type": "array", "items": { "type": "object", "properties": { "text": { "type": "string" }, "reason": { "type": "string" }, "reel_n": { "type": "integer" } } } },
+      "est_total_usd": { "type": "number" },
+      "meta": { "$ref": "#/$defs/NodeMeta" }
+    },
+    "required": ["stage", "pass", "results", "est_total_usd"]
+  },
+
+  "AssemblyRecipe": {
+    "type": "object",
+    "properties": {
+      "reel_n": { "type": "integer" },
+      "masters": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "aspect": { "$ref": "#/$defs/Aspect" },
+            "size": { "type": "string" },
+            "fps": { "type": "integer" },
+            "timeline": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "t_in": { "type": "number" }, "t_out": { "type": "number" },
+                  "source": { "type": "string", "description": "photo_id, clip url, or card:<id>" },
+                  "source_window": { "type": ["object", "null"], "properties": { "start": { "type": "number" }, "end": { "type": "number" } } },
+                  "crop": { "$ref": "#/$defs/Crop" },
+                  "motion": { "type": "string" },
+                  "direction": { "type": "string" },
+                  "transition_in": { "type": "string" },
+                  "overlays": { "type": "array", "items": { "type": "string", "description": "overlay png sequence id" } }
+                },
+                "required": ["t_in", "t_out", "source", "motion", "transition_in"]
+              }
+            }
+          },
+          "required": ["aspect", "size", "fps", "timeline"]
+        }
+      },
+      "overlay_sequences": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "kind": { "type": "string", "enum": ["card", "caption", "disclosure", "cta_band", "qr", "floor_plan_selfdraw"] }, "render_spec": { "type": "object" } }, "required": ["id", "kind", "render_spec"] } },
+      "audio": { "type": "object", "properties": { "track_id": { "type": "string" }, "fade_out_s": { "type": "number" }, "silent_variant": { "type": "boolean" } }, "required": ["track_id"] },
+      "truth_lock": { "type": "object", "properties": { "at_s": { "type": "number" }, "frames": { "type": "integer" }, "source_photo_id": { "type": "string" } } },
+      "ffmpeg_plan_hash": { "type": "string" }
+    },
+    "required": ["reel_n", "masters", "overlay_sequences", "audio"]
+  }
+}

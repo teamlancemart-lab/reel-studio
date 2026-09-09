@@ -1,0 +1,160 @@
+{
+  "version": "1.0",
+  "updated": "2026-09-07",
+
+  "price_bands": {
+    "in": {
+      "default": { "budget": [0, 8000000], "mid": [8000000, 20000000], "premium": [20000000, 50000000], "luxury": [50000000, null] },
+      "mumbai": { "budget": [0, 15000000], "mid": [15000000, 40000000], "premium": [40000000, 100000000], "luxury": [100000000, null] },
+      "gurgaon": { "budget": [0, 10000000], "mid": [10000000, 30000000], "premium": [30000000, 80000000], "luxury": [80000000, null] },
+      "bengaluru": { "budget": [0, 9000000], "mid": [9000000, 25000000], "premium": [25000000, 60000000], "luxury": [60000000, null] },
+      "pune": { "budget": [0, 8000000], "mid": [8000000, 20000000], "premium": [20000000, 50000000], "luxury": [50000000, null] },
+      "hyderabad": { "budget": [0, 8000000], "mid": [8000000, 20000000], "premium": [20000000, 50000000], "luxury": [50000000, null] }
+    },
+    "us": {
+      "default": { "entry": [0, 350000], "mid": [350000, 750000], "upper": [750000, 1500000], "luxury": [1500000, null] }
+    }
+  },
+  "hinglish_cities": ["gurgaon", "noida", "ghaziabad", "faridabad", "lucknow", "jaipur", "indore", "bhopal", "kanpur", "agra"],
+
+  "rera_portals": {
+    "UP": "https://www.up-rera.in", "MH": "https://maharera.maharashtra.gov.in", "HR": "https://haryanarera.gov.in", "KA": "https://rera.karnataka.gov.in", "DL": "https://rera.delhi.gov.in", "TN": "https://rera.tn.gov.in", "TS": "https://rerait.telangana.gov.in", "GJ": "https://gujrera.gujarat.gov.in", "WB": "https://wbhira.org", "RJ": "https://rera.rajasthan.gov.in", "MP": "https://rera.mp.gov.in", "PB": "https://rera.punjab.gov.in", "KL": "https://rera.kerala.gov.in"
+  },
+
+  "formats": [
+    { "id": "just_listed_reveal", "market_fit": { "in": 1.0, "us": 1.0 }, "intent_fit": { "first_home": 1, "upgrade": 1, "investor": 0.8, "nri_remote": 1, "relocation": 1, "downsizer_by_size": 1, "rental_yield": 0.7 }, "needs": [], "compliance_risk": { "in": "low", "us": "low" } },
+    { "id": "number_first_what_x_gets_you", "market_fit": { "in": 1.0, "us": 0.9 }, "intent_fit": { "first_home": 1, "upgrade": 0.9, "investor": 1, "nri_remote": 1, "relocation": 0.9, "downsizer_by_size": 0.8, "rental_yield": 1 }, "needs": ["locality"], "compliance_risk": { "in": "low", "us": "low" } },
+    { "id": "floor_plan_first", "market_fit": { "in": 1.0, "us": 0.7 }, "intent_fit": { "first_home": 0.9, "upgrade": 1, "investor": 0.8, "nri_remote": 1, "relocation": 0.8, "downsizer_by_size": 1, "rental_yield": 0.7 }, "needs": ["floor_plan"], "compliance_risk": { "in": "low", "us": "low" } },
+    { "id": "price_improved", "market_fit": { "in": 0.4, "us": 1.0 }, "intent_fit": { "first_home": 1, "upgrade": 0.9, "investor": 1, "nri_remote": 0.8, "relocation": 0.9, "downsizer_by_size": 0.8, "rental_yield": 0.9 }, "needs": ["prior_price"], "compliance_risk": { "in": "medium", "us": "low" } },
+    { "id": "sold_social_proof", "market_fit": { "in": 0.5, "us": 1.0 }, "intent_fit": { "first_home": 0.7, "upgrade": 0.8, "investor": 0.8, "nri_remote": 0.6, "relocation": 0.7, "downsizer_by_size": 0.7, "rental_yield": 0.7 }, "needs": ["sale_date", "days_on_market"], "compliance_risk": { "in": "medium", "us": "medium" } },
+    { "id": "day_in_the_life_walkthrough", "market_fit": { "in": 0.9, "us": 0.9 }, "intent_fit": { "first_home": 1, "upgrade": 1, "investor": 0.5, "nri_remote": 0.9, "relocation": 1, "downsizer_by_size": 0.9, "rental_yield": 0.5 }, "needs": ["interior_min_4"], "compliance_risk": { "in": "low", "us": "low" } },
+    { "id": "before_after", "market_fit": { "in": 0.9, "us": 0.9 }, "intent_fit": { "first_home": 0.8, "upgrade": 0.9, "investor": 1, "nri_remote": 0.7, "relocation": 0.7, "downsizer_by_size": 0.6, "rental_yield": 1 }, "needs": ["before_photos"], "compliance_risk": { "in": "medium", "us": "medium" } },
+    { "id": "neighbourhood_named_places", "market_fit": { "in": 1.0, "us": 0.5 }, "intent_fit": { "first_home": 0.9, "upgrade": 0.8, "investor": 0.9, "nri_remote": 1, "relocation": 1, "downsizer_by_size": 0.8, "rental_yield": 0.9 }, "needs": ["named_places"], "compliance_risk": { "in": "low", "us": "high" } },
+    { "id": "coming_soon_teaser", "market_fit": { "in": 0.6, "us": 1.0 }, "intent_fit": { "first_home": 0.9, "upgrade": 0.9, "investor": 0.9, "nri_remote": 0.8, "relocation": 0.8, "downsizer_by_size": 0.8, "rental_yield": 0.8 }, "needs": [], "compliance_risk": { "in": "high_if_no_rera", "us": "low" } },
+    { "id": "construction_progress", "market_fit": { "in": 1.0, "us": 0.3 }, "intent_fit": { "first_home": 0.8, "upgrade": 0.7, "investor": 1, "nri_remote": 1, "relocation": 0.5, "downsizer_by_size": 0.5, "rental_yield": 0.9 }, "needs": ["site_photos"], "compliance_risk": { "in": "medium", "us": "low" } }
+  ],
+
+  "hook_bank": [
+    { "id": "blueprint_to_photo", "label": "Blueprint sketch morphs into the real photo", "scroll_stop": 0.8, "engine_survival": 1.0, "compliance_fit": 1.0, "needs": ["exterior_front"], "default_path": "free_2p5d", "default_engine": "none", "optional_engine": "nano_banana_sketch", "theatrical_objects": ["pencil lines", "blueprint grid", "ink"], "reference_reels": ["Mochi"] },
+    { "id": "dollhouse_plan_to_house", "label": "3D dollhouse floor plan dissolves into the real exterior", "scroll_stop": 0.85, "engine_survival": 0.95, "compliance_fit": 0.95, "needs": ["floor_plan", "exterior_front|aerial_34"], "default_path": "still_then_clip", "default_engine": "veo_3_1_lite", "theatrical_objects": ["isometric plan extrusion"], "reference_reels": ["Irene 16"] },
+    { "id": "helicopter_drape", "label": "Small helicopter lifts a drape off the building", "scroll_stop": 0.95, "engine_survival": 0.7, "compliance_fit": 0.9, "needs": ["aerial_34|exterior_front"], "default_path": "still_then_clip", "default_engine": "hailuo_02_standard", "theatrical_objects": ["black or red drape", "small helicopter top of frame", "cables"], "reference_reels": ["Wildcard", "hf_183734"] },
+    { "id": "sky_drop", "label": "Camera dives from the sky, the house lands in its lot", "scroll_stop": 0.9, "engine_survival": 0.9, "compliance_fit": 0.95, "needs": ["aerial_topdown|aerial_wide", "exterior_front"], "default_path": "free_2p5d", "default_engine": "none", "optional_engine": "hailuo_02_standard", "theatrical_objects": ["lot outline", "cloud layer"], "reference_reels": ["Alright"] },
+    { "id": "earth_to_doorstep", "label": "Earth from space zooms down to the house", "scroll_stop": 0.95, "engine_survival": 0.75, "compliance_fit": 0.8, "needs": ["aerial_wide|aerial_34", "exterior_front"], "default_path": "still_then_clip", "default_engine": "hailuo_02_standard", "theatrical_objects": ["planet", "cloud layer", "invented terrain until the last second"], "reference_reels": ["Irene 12"] },
+    { "id": "block_build", "label": "Building constructs itself on the lot", "scroll_stop": 0.75, "engine_survival": 0.5, "compliance_fit": 0.7, "needs": ["aerial_34"], "default_path": "still_then_clip", "default_engine": "hailuo_02_standard", "theatrical_objects": ["bare lot", "slab", "framing"], "restrictions": ["not_for_towers", "max_floors_3"], "reference_reels": ["Electricity"] },
+    { "id": "paper_popup_room", "label": "Paper pop-up unfolds into the real room", "scroll_stop": 0.6, "engine_survival": 0.9, "compliance_fit": 0.95, "needs": ["living|kitchen"], "default_path": "free_2p5d", "default_engine": "none", "optional_engine": "veo_3_1_lite", "theatrical_objects": ["white paper", "fold lines"], "reference_reels": ["Irene 9"] },
+    { "id": "unveiling_flyover", "label": "Drone-style orbit reveal", "scroll_stop": 0.45, "engine_survival": 1.0, "compliance_fit": 0.5, "needs": ["aerial_34"], "default_path": "clip_only", "default_engine": "veo_3_1_lite", "theatrical_objects": [], "restrictions": ["heavy_label_required", "never_default"], "reference_reels": [] }
+  ],
+
+  "engine_bank": {
+    "hailuo_02_standard": { "provider": "fal", "endpoint": "fal-ai/minimax/hailuo-02/standard/image-to-video", "usd_per_s": 0.045, "res": "768p", "durations": [6, 10], "aspects": ["9x16", "16x9"], "upscale_needed": true },
+    "ltx_2_fast": { "provider": "fal", "endpoint": "fal-ai/ltxv-2/image-to-video/fast", "usd_per_s": 0.04, "res": "1080p", "durations": [6, 8, 10], "aspects": ["9x16", "16x9"], "upscale_needed": false, "role": "draft" },
+    "veo_3_1_lite": { "provider": "vertex", "endpoint": "veo-3.1-lite", "usd_per_s": 0.03, "usd_per_s_with_audio": 0.05, "res": "720p", "durations": [4, 6, 8], "aspects": ["9x16", "16x9"], "upscale_needed": true },
+    "kling_2_5_turbo": { "provider": "fal", "endpoint": "fal-ai/kling-video/v2.5-turbo/pro/image-to-video", "usd_per_s": 0.07, "res": "1080p", "durations": [5, 10], "aspects": ["9x16", "16x9"], "upscale_needed": false, "role": "fallback" },
+    "nano_banana": { "provider": "vertex", "endpoint": "gemini-2.5-flash-image", "inr_per_image": 4, "role": "still" },
+    "none": { "provider": "local", "usd_per_s": 0 }
+  },
+  "engine_note": "Wan 2.5 removed: $0.05/s is the 480p rate. Seedance out of scope at $0.24 to $0.68/s.",
+
+  "tiers": {
+    "fast": { "target_length_s": [13, 16], "hook_s": 2.2, "exterior_title_s": 1.5, "interior_s": 1.0, "floor_plan_s": 2.0, "exterior_return_s": 1.0, "aerial_s": 1.0, "cta_s": 3.5, "cut_every_beats": 1, "stutter_allowed": true },
+    "medium": { "target_length_s": [18, 24], "hook_s": 2.0, "exterior_title_s": 1.9, "interior_s": 1.9, "floor_plan_s": 3.5, "exterior_return_s": 1.9, "aerial_s": 1.9, "cta_s": 4.0, "cut_every_beats": 4, "stutter_allowed": false },
+    "slow": { "target_length_s": [30, 40], "hook_s": 2.0, "exterior_title_s": 4.0, "interior_s": 3.9, "floor_plan_s": 4.0, "exterior_return_s": 3.9, "aerial_s": 3.9, "cta_s": 5.0, "cut_every_beats": 8, "stutter_allowed": false }
+  },
+
+  "skeleton_order": ["hook", "exterior_title", "proof", "interior", "interior", "interior", "interior", "interior", "interior", "amenity", "amenity", "floor_plan", "exterior_return", "aerial_topdown", "aerial_wide", "cta_card"],
+  "interior_priority": ["foyer", "hallway", "living", "kitchen", "dining", "primary_bedroom", "bathroom", "balcony_view", "bedroom", "stairs"],
+  "drop_first": ["hallway", "half_bath", "stairs", "garage", "exterior_side", "exterior_rear"],
+  "max_interiors": 6,
+
+  "motion_vocabulary": {
+    "exterior_front": ["push_slow", "zoom_through"],
+    "aerial_34": ["push_slow", "orbit_fake_parallax"],
+    "aerial_topdown": ["pull_slow"],
+    "aerial_wide": ["pull_slow"],
+    "foyer": ["push_slow"], "hallway": ["push_medium"], "stairs": ["push_medium"],
+    "living": ["parallax_lr", "push_slow"], "kitchen": ["push_island", "parallax_rl"], "dining": ["pull_slow"],
+    "primary_bedroom": ["pull_slow"], "bedroom": ["push_slow"], "bathroom": ["push_fast"],
+    "balcony_view": ["pan_slow"], "terrace": ["pan_slow"], "pool": ["push_slow"], "gym": ["push_slow"], "clubhouse": ["push_slow"], "garden": ["pull_slow"],
+    "floor_plan": ["self_draw_then_scale"],
+    "cta_card": ["static_kinetic_text"]
+  },
+  "transitions": ["cut", "whip_blur", "zoom_through", "light_leak", "blueprint_wipe", "crossfade_short"],
+  "transition_rules": { "whip_blur_only_on_drop": true, "no_repeat_consecutive": true, "hook_to_exterior_default": "cut" },
+
+  "type_systems": {
+    "sans_pill": { "title_font": "Inter", "title_weight": 700, "title_case": "caps_small", "sub_font": "Inter", "sub_weight": 500, "pill": true, "pill_alpha": 0.55 },
+    "serif_smallcaps": { "title_font": "Playfair Display", "title_weight": 500, "title_case": "title", "sub_font": "Inter", "sub_weight": 500, "sub_case": "smallcaps", "pill": false, "shadow": true }
+  },
+  "safe_zone_9x16": { "top_frac": 0.15, "bottom_frac": 0.12, "side_frac": 0.04 },
+
+  "cta_forms": {
+    "in": ["Book a site visit", "WhatsApp for the floor plan", "DM SITE VISIT", "Ready to move, book a visit"],
+    "us": ["Book a private tour", "DM TOUR for the floor plan", "Request a showing", "Open house {date}, {time}"]
+  },
+
+  "required_overlays": {
+    "us": {
+      "hook_label": "AI-generated reveal. Actual exterior at {truth_lock_s}s.",
+      "cta_lines": ["{brokerage}", "Equal Housing Opportunity", "Opening scene digitally created. Originals: {originals_url}"]
+    },
+    "in": {
+      "hook_label": "AI-generated / artist's impression",
+      "cta_lines": ["RERA No. {rera_project}", "{rera_portal_url}", "Agent RERA No. {rera_agent}"],
+      "qr": "{rera_portal_url}",
+      "area_label_required": "Carpet area"
+    }
+  },
+  "overlay_style": { "hook_label_min_px_height_at_1080": 28, "cta_band_min_px_height_at_1920": 160, "corner_default": "tl" },
+
+  "banned_phrases": {
+    "us": ["safe neighborhood", "safe neighbourhood", "quiet neighborhood", "quiet neighbourhood", "exclusive", "prestigious", "family-friendly", "family friendly", "perfect for families", "great for kids", "kid-friendly", "kid friendly", "empty nesters", "young professionals", "singles", "bachelor", "retirees", "mature", "senior", "no children", "adults only", "no section 8", "church", "temple", "mosque", "synagogue", "christian", "hindu", "muslim", "jewish", "english speaking", "hispanic", "asian", "african american", "handicapped", "able-bodied", "top-rated schools", "top rated schools", "best schools", "great schools", "excellent schools", "good schools", "integrated", "private community", "walking distance to church"],
+    "in": ["luxury", "ultra luxury", "ultra-luxury", "assured return", "guaranteed return", "free foreign trip", "free gift", "super built-up", "super builtup", "saleable area", "pre-launch", "prelaunch", "best in class", "world class", "world-class", "5 minutes from", "10 minutes from"]
+  },
+  "banned_phrase_exceptions": {
+    "in": { "luxury": "allowed when listing_truth.facts.luxury_criteria is set", "super built-up": "allowed only as a secondary labelled figure, never the price basis", "5 minutes from": "allowed when facts.named_places supplies distance_text" },
+    "us": { "senior": "allowed only for verified 55+ housing", "church": "allowed only as a factual named landmark in an address, never as a benefit" }
+  },
+  "caution_patterns": {
+    "us": ["school district", "schools", "hoa", "gated", "walkable", "near"],
+    "in": ["vastu", "facing", "possession", "minutes from", "near metro"]
+  },
+
+  "qa_reject_list": [
+    "people_added_or_removed", "vehicles_added_or_removed", "time_of_day_changed", "weather_changed", "lights_switched", "fire_or_fireplace_added", "water_or_pool_added", "fireworks_smoke_snow", "furniture_changed_moved_added_removed", "floor_count_mismatch", "window_count_mismatch", "door_count_mismatch", "balcony_count_mismatch", "roof_line_mismatch", "door_opens_or_wall_passthrough", "text_or_logo_added", "last_frame_not_source"
+  ],
+  "qa_prompt_negative_block": "no people, no vehicles, no animals, no extra windows, no extra floors, no text, no logos, no signage, no lights turning on, no change of time of day or weather, no fire, no water, no fireworks, no new furniture, no moved furniture, the building in the reference image stays exactly as photographed",
+
+  "preflight_rules": [
+    { "id": "IN_NO_RERA_NEW", "stage": "pre_generation", "level": "BLOCK", "when": "market=in AND (facts.status in [new_launch, under_construction, coming_soon]) AND compliance_context.rera_project is empty", "message": "New or under-construction project cannot be advertised without a RERA registration number (RERA s.3)." },
+    { "id": "IN_NO_AGENT_RERA", "stage": "pre_export", "level": "WARN", "when": "market=in AND compliance_context.is_brokered AND compliance_context.rera_agent is empty", "message": "Brokered listing without an agent RERA number. Add it or accept the risk." },
+    { "id": "IN_AREA_BASIS", "stage": "pre_export", "level": "BLOCK", "when": "market=in AND any on-screen area figure without the label 'Carpet area' OR facts.area_basis != carpet AND the figure is used as price basis", "message": "Only carpet area may be used as the price basis in Indian advertising." },
+    { "id": "IN_LUXURY_NO_CRITERIA", "stage": "pre_export", "level": "BLOCK", "when": "market=in AND 'luxury' appears in any copy AND facts.luxury_criteria is empty", "message": "'Luxury' without objective criteria." },
+    { "id": "IN_RERA_BAND_MISSING", "stage": "pre_export", "level": "BLOCK", "when": "market=in AND compliance_context.rera_project set AND cta_card.compliance_lines lacks RERA number OR portal", "message": "RERA number and portal must be inside the frame, legible, not in the caption." },
+    { "id": "US_FH_PHRASE", "stage": "pre_export", "level": "BLOCK", "when": "market=us AND any banned_phrases.us match in any card, caption or post text (exact) OR phrase_scan flags coded language", "message": "Fair Housing coded or preference language." },
+    { "id": "US_SCHOOL_SUPERLATIVE", "stage": "pre_export", "level": "BLOCK", "when": "market=us AND a school is mentioned with any rating adjective", "message": "Schools may be named, never rated." },
+    { "id": "US_ALTERED_NO_DISCLOSURE", "stage": "pre_generation", "level": "BLOCK", "when": "market=us AND hook.generation_path != free_2p5d AND (disclosure_overlay missing OR cta_card lacks the altered-image line)", "message": "Digitally altered exterior needs an on-screen label and an originals link (NAR SoP 12-5, CA AB 723)." },
+    { "id": "US_ORIGINALS_URL", "stage": "pre_export", "level": "WARN", "when": "market=us AND compliance_context.originals_url is empty", "message": "No originals URL for the altered-image disclosure. Required in CA, best practice everywhere." },
+    { "id": "US_EHO_LINE", "stage": "pre_export", "level": "WARN", "when": "market=us AND 'Equal Housing Opportunity' not in cta_card.compliance_lines", "message": "Equal Housing Opportunity line missing." },
+    { "id": "US_BROKERAGE", "stage": "pre_export", "level": "WARN", "when": "market=us AND facts.brokerage empty", "message": "Brokerage name missing from CTA." },
+    { "id": "HOOK_SOURCE_HAS_PEOPLE", "stage": "pre_generation", "level": "BLOCK", "when": "B0[hook.source_photo_id].flags.people_present", "message": "Hook source photo contains people." },
+    { "id": "HOOK_CONCEPT_ASSET_FIT", "stage": "pre_generation", "level": "BLOCK", "when": "hook.scores.asset_fit == 0", "message": "Chosen hook needs an asset the pool lacks." },
+    { "id": "HOOK_BLOCK_BUILD_TOWER", "stage": "pre_generation", "level": "BLOCK", "when": "hook.concept_id == block_build AND (property_type in [apartment, penthouse] OR observed floors > 3)", "message": "Block build fails on towers and multi-floor buildings at cheap engine rates." },
+    { "id": "HOOK_FLYOVER_DEFAULT", "stage": "pre_generation", "level": "WARN", "when": "hook.concept_id == unveiling_flyover", "message": "Flyover reads as real footage. Heavy label required." },
+    { "id": "NO_TRUTH_LOCK", "stage": "pre_generation", "level": "BLOCK", "when": "hook.truth_lock missing OR frames < 8", "message": "Every generated hook must end on the unaltered source photo." },
+    { "id": "Q_FAIL_TWICE", "stage": "pre_export", "level": "BLOCK", "when": "Q1 or Q2 failed twice for this hook and no fallback was run", "message": "Hook QA failed twice. Switch to the fallback concept." },
+    { "id": "INTERIOR_ALTERED", "stage": "pre_export", "level": "BLOCK", "when": "any interior shot source is a generated clip", "message": "Interiors must be the untouched photos with motion only." },
+    { "id": "STAGING_UNLABELLED", "stage": "pre_export", "level": "WARN", "when": "listing_truth.flags.staging_suspected_any AND no 'Virtually staged' label in captions", "message": "Photos look virtually staged. Add the label or confirm they are real." },
+    { "id": "CLAIM_UNPROVABLE", "stage": "pre_export", "level": "BLOCK", "when": "any card text or post_caption number or feature has no claims_trace entry OR format in [price_improved, sold_social_proof] without prior_price or sale_date", "message": "Every claim must trace to a listing fact." },
+    { "id": "PEOPLE_IN_WALKTHROUGH", "stage": "pre_export", "level": "WARN", "when": "any selected shot photo has flags.people_present", "message": "People in a listing photo. Fair Housing imagery risk in US; misrepresentation risk anywhere." },
+    { "id": "ASPECT_MASTER", "stage": "pre_export", "level": "WARN", "when": "primary master aspect != 9x16", "message": "Reels letterbox 16:9. 16:9 should be the derivative." },
+    { "id": "LENGTH", "stage": "pre_export", "level": "WARN", "when": "total_length_s < 12 OR > 40", "message": "Outside the 12 to 40s window." },
+    { "id": "MUSIC_UNLICENSED", "stage": "pre_export", "level": "BLOCK_PAID_WARN_ORGANIC", "when": "track_id not in licensed library", "message": "Track not in the licensed library." },
+    { "id": "VARIANT_COLLISION", "stage": "pre_export", "level": "WARN", "when": "two reels share concept_id AND tier", "message": "Two reels will look the same." },
+    { "id": "BUDGET", "stage": "pre_generation", "level": "WARN", "when": "sum(hook.est_cost.total_usd) > 3.0", "message": "Job estimate exceeds $3." },
+    { "id": "SAFE_ZONE", "stage": "pre_export", "level": "BLOCK", "when": "any card bounding box outside safe_zone_9x16", "message": "Text inside the Reels UI overlay zone." }
+  ],
+
+  "job_defaults": { "reels_per_job": 3, "master_aspect": "9x16", "emit_16x9": true, "emit_silent_variant": true, "fps": 30, "master_size_9x16": "1080x1920", "master_size_16x9": "1920x1080", "hook_usable_s": 2.5, "truth_lock_frames": 15 },
+
+  "cost_reference_inr": { "text_node": 0.2, "vision_node": 0.5, "still": 4, "usd_inr": 84 }
+}
