@@ -1,6 +1,6 @@
 {
-  "version": "1.1",
-  "updated": "2026-09-09",
+  "version": "1.2",
+  "updated": "2026-09-10",
   "price_bands": {
     "in": {
       "default": {
@@ -455,7 +455,11 @@
         "start": 1.3,
         "end": 4.0
       },
-      "notes": "Verified working. Cut the 1.3-4.0s window of the reversed clip: that is where the lift motion is. The first second is a near-static hang. Keep the helicopter small and high in frame; cables plus a dark shape read better than a rendered aircraft."
+      "notes": "Verified working. Cut the 1.3-4.0s window of the reversed clip: that is where the lift motion is. The first second is a near-static hang. Keep the helicopter small and high in frame; cables plus a dark shape read better than a rendered aircraft.",
+      "duration_s": 8,
+      "last_frame_still": true,
+      "reverse_after_generate": true,
+      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice."
     },
     {
       "id": "sky_drop",
@@ -521,7 +525,11 @@
       ],
       "reference_reels": [
         "Electricity"
-      ]
+      ],
+      "duration_s": 8,
+      "last_frame_still": true,
+      "reverse_after_generate": true,
+      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice."
     },
     {
       "id": "paper_popup_room",
@@ -576,7 +584,11 @@
         "pale haze",
         "construction dust"
       ],
-      "notes": "Cheapest concealment concept for a model to render. Use when the drape QA fails twice."
+      "notes": "Cheapest concealment concept for a model to render. Use when the drape QA fails twice.",
+      "duration_s": 8,
+      "last_frame_still": true,
+      "reverse_after_generate": true,
+      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice."
     }
   ],
   "engine_bank": {
@@ -614,15 +626,17 @@
     },
     "veo_3_1_lite": {
       "provider": "vertex",
-      "endpoint": "veo-3.1-lite",
-      "usd_per_s": 0.03,
-      "usd_per_s_with_audio": 0.05,
+      "endpoint": "veo-3.1-lite-generate-001",
+      "usd_per_s": 0.05,
+      "audio_bundled_on_vertex": true,
+      "note": "Vertex bundles audio into the price. generateAudio:false does NOT reduce the rate. $0.03/s is the fal/Replicate audio-off rate, not Vertex. Verified against a real $0.40 charge for an 8s run.",
       "res": "720p",
-      "durations": [
+      "durations_s": [
         4,
         6,
         8
       ],
+      "last_frame_requires_duration_s": 8,
       "aspects": [
         "9x16",
         "16x9"
@@ -656,7 +670,7 @@
       "usd_per_s": 0
     }
   },
-  "engine_note": "Wan 2.5 removed: $0.05/s is the 480p rate. Seedance out of scope at $0.24 to $0.68/s.",
+  "engine_note": "Wan 2.5 removed: $0.05/s is its 480p rate. Seedance out of scope. Veo 3.1 Lite on Vertex is $0.05/s regardless of generateAudio; only fal/Replicate offer ~$0.03/s with audio off.",
   "tiers": {
     "fast": {
       "target_length_s": [
@@ -1230,7 +1244,9 @@
         "6. Q2 on first/mid/last. The theatrical object in the mid frame is EXPECTED and is never a reject."
       ],
       "verified_on": "veo-3.1-lite-generate-001, 6s, 9:16, 720p, generateAudio false, personGeneration dont_allow",
-      "verified_result": "2 of 2 runs preserved floors, front-window count, roof shape, colour, materials and the parked vehicle. Final frame pixel-matches the source."
+      "verified_result": "2 of 2 runs preserved floors, front-window count, roof shape, colour, materials and the parked vehicle. Final frame pixel-matches the source.",
+      "duration_s": 8,
+      "usd_per_run": 0.4
     },
     "still_then_clip": {
       "desc": "DEPRECATED for concealment concepts. Produced a different building in testing. Keep only for concepts where the building stays visible throughout."
