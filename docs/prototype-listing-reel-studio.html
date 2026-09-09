@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Listing Reel Studio</title>
+<style>
+  :root { --bg:#0a0a0b; --panel:#141416; --line:#26262b; --ink:#f4f4f5; --mut:#8a8a92; --gold:#f5b301; --navy:#132038; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { position:sticky; top:0; z-index:10; background:rgba(10,10,11,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  .bar { max-width:1180px; margin:0 auto; display:flex; align-items:center; gap:12px; padding:12px 16px; }
+  .logo { width:30px; height:30px; border-radius:7px; background:var(--gold); color:#111; display:grid; place-items:center; font-weight:800; }
+  h1 { font-size:14px; margin:0; }
+  .sub { font-size:11px; color:var(--mut); }
+  main { max-width:1180px; margin:0 auto; padding:20px 16px 60px; display:grid; grid-template-columns:1fr 360px; gap:20px; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .panel h2 { font-size:13px; margin:0 0 4px; }
+  .hint { font-size:11px; color:var(--mut); margin:0 0 12px; }
+  label.f { display:block; margin-bottom:10px; }
+  label.f span { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--mut); }
+  input[type=text]{ width:100%; margin-top:4px; background:#0c0c0e; border:1px solid var(--line); border-radius:7px; padding:8px 10px; color:var(--ink); font-size:13px; }
+  input[type=text]:focus{ outline:none; border-color:var(--gold); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .drop { border:1px dashed var(--line); border-radius:8px; padding:12px; text-align:center; cursor:pointer; font-size:12px; color:var(--mut); transition:.15s; }
+  .drop:hover, .drop.over { border-color:var(--gold); color:var(--ink); background:rgba(245,179,1,.05); }
+  .thumbs { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .thumb { width:46px; height:46px; border-radius:5px; object-fit:cover; border:1px solid var(--line); position:relative; }
+  .stage { display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .frameWrap { background:#000; border-radius:18px; padding:10px; border:3px solid #2a2a30; }
+  canvas { display:block; border-radius:10px; background:#000; max-height:62vh; }
+  .controls { width:100%; }
+  .row { display:flex; align-items:center; gap:8px; }
+  button.btn { background:var(--gold); color:#111; border:0; border-radius:8px; padding:9px 14px; font-weight:600; font-size:13px; cursor:pointer; }
+  button.btn.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  button.btn:disabled { opacity:.4; cursor:not-allowed; }
+  input[type=range]{ width:100%; accent-color:var(--gold); }
+  .seg { display:flex; gap:4px; background:#0c0c0e; border:1px solid var(--line); border-radius:8px; padding:4px; }
+  .seg button { flex:1; border:0; background:transparent; color:var(--mut); font-size:12px; padding:6px; border-radius:5px; cursor:pointer; }
+  .seg button.on { background:var(--gold); color:#111; }
+  .phase { font-size:11px; color:var(--gold); font-variant:tabular-nums; }
+  .time { font-family:ui-monospace,monospace; font-size:13px; color:var(--mut); }
+  .note { font-size:11px; color:var(--mut); line-height:1.5; }
+  .rec { color:#fb7185; font-size:12px; }
+  .tag { display:inline-block; background:#0c0c0e; border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:10px; color:var(--mut); }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo">R</div>
+    <div>
+      <h1>Listing Reel Studio</h1>
+      <div class="sub">Upload photos, play the reel, download the video. All in your browser.</div>
+    </div>
+    <div style="margin-left:auto" class="tag" id="statusTag">no photos yet</div>
+  </div>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Preview</h2>
+    <p class="hint">Live reel from your photos. Hit record to save it as a video file.</p>
+    <div class="stage">
+      <div class="seg" style="max-width:220px">
+        <button id="a916" class="on">9:16</button>
+        <button id="a169">16:9</button>
+      </div>
+      <div class="frameWrap"><canvas id="cv" width="360" height="640"></canvas></div>
+      <div class="controls">
+        <div class="row" style="justify-content:space-between">
+          <span class="phase" id="phase">Hook</span>
+          <span class="time" id="time">0.0s / 30.0s</span>
+        </div>
+        <input id="scrub" type="range" min="0" max="30" step="0.1" value="0" />
+        <div class="row" style="justify-content:space-between; margin-top:8px">
+          <div class="row">
+            <button class="btn" id="play">Play</button>
+            <button class="btn ghost" id="restart">Restart</button>
+          </div>
+          <div class="row">
+            <button class="btn" id="record">Record & download</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px"><span class="note" id="recNote"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel" style="margin-bottom:16px">
+      <h2>Photos</h2>
+      <p class="hint">Exterior for the hook, interiors for the walkthrough, one floor plan.</p>
+      <div class="drop" id="dropExt">Drop / choose exterior<div class="thumbs" id="thExt"></div></div>
+      <div style="height:8px"></div>
+      <div class="drop" id="dropInt">Drop / choose interiors (up to 6)<div class="thumbs" id="thInt"></div></div>
+      <div style="height:8px"></div>
+      <div class="drop" id="dropPlan">Drop / choose floor plan<div class="thumbs" id="thPlan"></div></div>
+    </div>
+    <div class="panel">
+      <h2>Details</h2>
+      <p class="hint">Shown on the hook and closing cards.</p>
+      <label class="f"><span>Price</span><input type="text" id="fPrice" placeholder="$249,000" /></label>
+      <label class="f"><span>Address</span><input type="text" id="fAddr" placeholder="2238 Penn St, Harrisburg, PA" /></label>
+      <div class="grid2">
+        <label class="f"><span>Beds / baths / sqft</span><input type="text" id="fSpecs" placeholder="4 bed · 2 bath · 1,562 sqft" /></label>
+        <label class="f"><span>Agent</span><input type="text" id="fAgent" placeholder="Agent name" /></label>
+      </div>
+      <div class="grid2">
+        <label class="f"><span>Phone</span><input type="text" id="fPhone" placeholder="(717) 555-0100" /></label>
+        <label class="f"><span>Brokerage</span><input type="text" id="fBroker" placeholder="Brokerage" /></label>
+      </div>
+      <label class="f"><span>Room captions (comma separated, one per interior)</span><input type="text" id="fCaps" placeholder="Bright primary suite, Corner living room, Full kitchen" /></label>
+    </div>
+  </div>
+</main>
+
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let ASPECT = '9:16';
+const TOTAL = 30, XFADE = 0.45;
+const state = { ext:null, ints:[], plan:null };
+const fields = {};
+['fPrice','fAddr','fSpecs','fAgent','fPhone','fBroker','fCaps'].forEach(id=>{
+  fields[id]=document.getElementById(id);
+  fields[id].addEventListener('input', ()=>{ if(!playing) draw(t); });
+});
+
+function setAspect(a){
+  ASPECT=a;
+  if(a==='9:16'){ cv.width=360; cv.height=640; } else { cv.width=640; cv.height=360; }
+  document.getElementById('a916').classList.toggle('on', a==='9:16');
+  document.getElementById('a169').classList.toggle('on', a==='16:9');
+  draw(t);
+}
+document.getElementById('a916').onclick=()=>setAspect('9:16');
+document.getElementById('a169').onclick=()=>setAspect('16:9');
+
+/* ---------- uploads ---------- */
+function wireDrop(dropId, thumbId, multi, assign){
+  const d=document.getElementById(dropId), th=document.getElementById(thumbId);
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.multiple=multi; inp.style.display='none';
+  d.appendChild(inp);
+  d.addEventListener('click', ()=>inp.click());
+  d.addEventListener('dragover', e=>{e.preventDefault(); d.classList.add('over');});
+  d.addEventListener('dragleave', ()=>d.classList.remove('over'));
+  d.addEventListener('drop', e=>{e.preventDefault(); d.classList.remove('over'); handle(e.dataTransfer.files);});
+  inp.addEventListener('change', e=>handle(e.target.files));
+  function handle(files){
+    const arr=[...files].filter(f=>f.type.startsWith('image/'));
+    let loaded=0; const imgs=[];
+    arr.forEach((f,i)=>{
+      const r=new FileReader();
+      r.onload=()=>{ const im=new Image(); im.onload=()=>{ imgs[i]=im; if(++loaded===arr.length){ assign(imgs, th); refreshThumbs(); if(!playing) draw(t); } }; im.src=r.result; };
+      r.readAsDataURL(f);
+    });
+  }
+}
+wireDrop('dropExt','thExt',false,(imgs)=>{ state.ext=imgs[0]; });
+wireDrop('dropInt','thInt',true,(imgs)=>{ state.ints=(state.ints.concat(imgs)).slice(0,6); });
+wireDrop('dropPlan','thPlan',false,(imgs)=>{ state.plan=imgs[0]; });
+
+function refreshThumbs(){
+  const set=(id,list)=>{ const el=document.getElementById(id); el.innerHTML=''; list.forEach(im=>{ const c=document.createElement('canvas'); c.width=46;c.height=46;c.className='thumb'; const cx=c.getContext('2d'); cover(cx,im,0,0,46,46); el.appendChild(c);}); };
+  set('thExt', state.ext?[state.ext]:[]);
+  set('thInt', state.ints);
+  set('thPlan', state.plan?[state.plan]:[]);
+  const n=(state.ext?1:0)+state.ints.length+(state.plan?1:0);
+  document.getElementById('statusTag').textContent = n?`${n} photo${n>1?'s':''} loaded`:'no photos yet';
+}
+
+/* ---------- drawing helpers ---------- */
+function cover(c,img,dx,dy,dw,dh,scale=1,panx=0,pany=0){
+  if(!img){ c.fillStyle='#1b1b1f'; c.fillRect(dx,dy,dw,dh); return; }
+  const ir=img.width/img.height, dr=dw/dh; let sw,sh,sx,sy;
+  if(ir>dr){ sh=img.height; sw=sh*dr; } else { sw=img.width; sh=sw/dr; }
+  sw/=scale; sh/=scale;
+  sx=(img.width-sw)/2 + panx*sw*0.5; sy=(img.height-sh)/2 + pany*sh*0.5;
+  c.drawImage(img,sx,sy,sw,sh,dx,dy,dw,dh);
+}
+const ease=p=>{p=Math.min(1,Math.max(0,p)); return p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;};
+const lerp=(a,b,p)=>a+(b-a)*p;
+function grad(c,W,H){ const g=c.createLinearGradient(0,H*0.55,0,H); g.addColorStop(0,'rgba(8,10,15,0)'); g.addColorStop(1,'rgba(8,10,15,.85)'); c.fillStyle=g; c.fillRect(0,H*0.55,W,H*0.45); }
+function val(id,f){ return fields[id].value.trim()||f; }
+
+const KB=[[1,1.16,0,0,-.04,-.03],[1.16,1,.04,.02,0,0],[1.05,1.2,-.03,.03,.03,-.02],[1.2,1.05,-.03,-.03,.03,.03],[1,1.14,.03,-.02,-.03,.02]];
+
+/* ---------- segments ---------- */
+function segments(){
+  const n=Math.max(1,state.ints.length), per=15/n;
+  const s=[{id:'hook',ph:'Hook',a:0,b:3}];
+  for(let i=0;i<n;i++) s.push({id:'room',idx:i,ph:'Walkthrough',a:3+i*per,b:3+(i+1)*per});
+  s.push({id:'plan',ph:'Floor plan',a:18,b:25});
+  s.push({id:'cta',ph:'Close',a:25,b:30});
+  return s;
+}
+
+function renderSeg(seg,t,W,H){
+  const local=Math.max(0,t-seg.a), p=Math.min(1,local/(seg.b-seg.a));
+  if(seg.id==='hook'){
+    cover(ctx,state.ext,0,0,W,H, lerp(1.22,1.0,ease(p)), 0, lerp(.04,0,ease(p)));
+    grad(ctx,W,H);
+    const pin=ease(Math.min(1,Math.max(0,(local-.4)/.7))), ain=ease(Math.min(1,Math.max(0,(local-.9)/.7)));
+    ctx.textAlign='left';
+    ctx.fillStyle=`rgba(255,255,255,${pin})`; ctx.font=`800 ${Math.round(W*.11)}px Georgia,serif`;
+    ctx.fillText(val('fPrice','Just Listed'), W*.06, H-H*.14 - lerp(20,0,pin));
+    ctx.fillStyle=`rgba(230,230,235,${ain})`; ctx.font=`500 ${Math.round(W*.042)}px system-ui`;
+    ctx.fillText(val('fAddr','Address'), W*.06, H-H*.09 - lerp(12,0,ain));
+    return;
+  }
+  if(seg.id==='room'){
+    const k=KB[seg.idx%KB.length], sc=lerp(k[0],k[1],ease(p)), px=lerp(k[2],k[4],ease(p)), py=lerp(k[3],k[5],ease(p));
+    cover(ctx,state.ints[seg.idx],0,0,W,H,sc,px,py);
+    grad(ctx,W,H);
+    const caps=fields.fCaps.value.split(',').map(x=>x.trim()).filter(Boolean);
+    const cap=caps[seg.idx]||`Room ${seg.idx+1}`;
+    const cin=ease(Math.min(1,Math.max(0,(local-.25)/.4)));
+    ctx.textAlign='left'; ctx.fillStyle=`rgba(255,255,255,${cin})`; ctx.font=`600 ${Math.round(W*.05)}px system-ui`;
+    ctx.fillText(cap, W*.06, H-H*.11);
+    ctx.fillStyle='rgba(200,200,210,.85)'; ctx.font=`500 ${Math.round(W*.032)}px system-ui`;
+    ctx.fillText(`${seg.idx+1} / ${Math.max(1,state.ints.length)}`, W*.06, H-H*.06);
+    return;
+  }
+  if(seg.id==='plan'){
+    ctx.fillStyle='#f4f1ea'; ctx.fillRect(0,0,W,H);
+    if(state.plan){
+      const sc=lerp(1.0,1.28,ease(p)); const iw=W*sc, ih=H*sc;
+      const dr=W/H, ir=state.plan.width/state.plan.height;
+      let dw2,dh2; if(ir>dr){ dw2=iw; dh2=iw/ir; } else { dh2=ih; dw2=ih*ir; }
+      ctx.drawImage(state.plan,(W-dw2)/2 + lerp(0,-W*.05,ease(p)),(H-dh2)/2 + lerp(0,H*.04,ease(p)),dw2,dh2);
+    }
+    ctx.textAlign='left'; ctx.fillStyle='#132038'; ctx.font=`700 ${Math.round(W*.05)}px Georgia,serif`;
+    ctx.fillText('The floor plan', W*.06, H*.14);
+    ctx.font=`500 ${Math.round(W*.032)}px system-ui`; ctx.fillStyle='#4a5568';
+    ctx.fillText(val('fSpecs','floor plan'), W*.06, H*.14+H*.05);
+    return;
+  }
+  // cta
+  ctx.fillStyle='#132038'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(245,179,1,.8)'; ctx.lineWidth=2; ctx.strokeRect(W*.06,H*.06,W-W*.12,H-H*.12);
+  ctx.textAlign='center';
+  const ci=ease(Math.min(1,local/.6));
+  ctx.fillStyle='#f5b301'; ctx.font=`600 ${Math.round(W*.032)}px system-ui`;
+  ctx.fillText('BOOK YOUR PRIVATE TOUR', W/2, H*.4);
+  ctx.fillStyle=`rgba(244,244,245,${ci})`; ctx.font=`700 ${Math.round(W*.07)}px Georgia,serif`;
+  ctx.fillText(val('fAgent','Agent name'), W/2, H*.5);
+  ctx.fillStyle='rgba(214,208,196,.9)'; ctx.font=`500 ${Math.round(W*.038)}px system-ui`;
+  ctx.fillText(val('fBroker','Brokerage'), W/2, H*.57);
+  const bi=ease(Math.min(1,Math.max(0,(local-.5)/.5)));
+  ctx.fillStyle=`rgba(245,179,1,${bi})`;
+  const bw=W*.55, bh=H*.08;
+  roundRect(ctx,(W-bw)/2,H*.64,bw,bh,bh/2); ctx.fill();
+  ctx.fillStyle='#132038'; ctx.font=`700 ${Math.round(W*.038)}px system-ui`;
+  ctx.fillText(val('fPhone','(000) 000-0000'), W/2, H*.64+bh*.62);
+}
+function roundRect(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+
+/* ---------- master draw ---------- */
+function draw(tt){
+  const W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  const segs=segments();
+  let i=segs.findIndex(s=>tt>=s.a&&tt<s.b); if(i<0) i=segs.length-1;
+  const cur=segs[i], prev=i>0?segs[i-1]:null, since=tt-cur.a;
+  if(prev && since<XFADE){
+    renderSeg(prev,tt,W,H);
+    ctx.save(); ctx.globalAlpha=ease(since/XFADE); renderSeg(cur,tt,W,H); ctx.restore();
+  } else {
+    renderSeg(cur,tt,W,H);
+  }
+  document.getElementById('phase').textContent=cur.ph;
+  document.getElementById('time').textContent=`${tt.toFixed(1)}s / ${TOTAL.toFixed(1)}s`;
+  document.getElementById('scrub').value=tt;
+}
+
+/* ---------- playback ---------- */
+let t=0, playing=false, raf=null, last=0;
+function loop(ts){
+  if(!last) last=ts; const dt=(ts-last)/1000; last=ts;
+  t+=dt; if(t>=TOTAL){ t=TOTAL; draw(t); stop(); return; }
+  draw(t); raf=requestAnimationFrame(loop);
+}
+function play(){ if(playing) return; if(t>=TOTAL) t=0; playing=true; last=0; document.getElementById('play').textContent='Pause'; raf=requestAnimationFrame(loop); }
+function stop(){ playing=false; document.getElementById('play').textContent='Play'; if(raf) cancelAnimationFrame(raf); }
+document.getElementById('play').onclick=()=>{ playing?stop():play(); };
+document.getElementById('restart').onclick=()=>{ stop(); t=0; draw(0); };
+document.getElementById('scrub').oninput=e=>{ stop(); t=parseFloat(e.target.value); draw(t); };
+
+/* ---------- record ---------- */
+document.getElementById('record').onclick=async ()=>{
+  if(!state.ext && state.ints.length===0){ document.getElementById('recNote').innerHTML='<span class="rec">Add at least one photo first.</span>'; return; }
+  stop(); t=0;
+  const btn=document.getElementById('record'); btn.disabled=true;
+  const stream=cv.captureStream(30);
+  let mime='video/webm;codecs=vp9'; if(!MediaRecorder.isTypeSupported(mime)) mime='video/webm';
+  const rec=new MediaRecorder(stream,{mimeType:mime, videoBitsPerSecond:6_000_000});
+  const chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  rec.onstop=()=>{
+    const blob=new Blob(chunks,{type:'video/webm'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=`listing_reel_${ASPECT.replace(':','x')}.webm`; a.click();
+    URL.revokeObjectURL(url);
+    document.getElementById('recNote').innerHTML='Saved. Convert to MP4 with any tool if your platform needs it.';
+    btn.disabled=false;
+  };
+  rec.start();
+  document.getElementById('recNote').innerHTML='<span class="rec">Recording 30s… keep this tab focused.</span>';
+  const start=performance.now();
+  function recLoop(ts){
+    t=(ts-start)/1000;
+    if(t>=TOTAL){ t=TOTAL; draw(t); rec.stop(); return; }
+    draw(t); requestAnimationFrame(recLoop);
+  }
+  requestAnimationFrame(recLoop);
+};
+
+setAspect('9:16');
+draw(0);
+</script>
+</body>
+</html>
