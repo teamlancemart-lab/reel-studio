@@ -1,0 +1,25 @@
+{
+  "floors": {
+    "ref": 3,
+    "mid": 3,
+    "last": 3
+  },
+  "windows_front": {
+    "ref": 14,
+    "mid": null,
+    "last": 14
+  },
+  "vehicles": {
+    "ref": 1,
+    "mid": 1,
+    "last": 1
+  },
+  "roof_shape_match_last": true,
+  "same_building_last": true,
+  "rejects": [
+    "structure_changed"
+  ],
+  "last_frame_matches_reference": true,
+  "verdict": "fail",
+  "notes": "The middle frame shows the building's facade completely covered by a large red cloth and a helicopter, which constitutes a temporary structure change."
+}
