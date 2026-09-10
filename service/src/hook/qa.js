@@ -41,11 +41,36 @@ export const QA_EXTRA_CODES = {
   camera_moved: "framing, lens or camera position differs",
 };
 
+/**
+ * rules.json hook_bank conceal_mode. "cover": an object hides the building (drape, haze).
+ * "remove": the building itself is taken away to its slab (build itself). The questions
+ * differ; the rules about the object, the scene and the counts do not.
+ */
+const MODE = {
+  cover: {
+    still: "ONE theatrical object added that covers or hides the MAIN BUILDING, and nothing else changed",
+    target: "The object MUST be on the MAIN BUILDING (the house the photograph is of). If it covers or sits on something else instead (a parked vehicle, a tree, the street, a neighbouring building) while the main building stays visible, that is concealment_target_wrong.",
+    targetQ: "what does the object cover? concealment_target_ok is true only if it covers the main building",
+    shape: "if the building is covered, does the covered shape have the same outline, roof line and footprint as the building in image 1? If the building is not covered, answer true and rely on concealment_target_ok",
+    clip: "the theatrical object starts on the MAIN BUILDING and lifts away, and the clip ends on the uncovered building",
+    midFrames: "partly or wholly covered by the object",
+  },
+  remove: {
+    still: "the MAIN BUILDING removed down to a bare foundation slab on its own footprint, and nothing else changed",
+    target: "ONLY the MAIN BUILDING (the house the photograph is of) may be removed. If a neighbouring building, a vehicle, a tree or anything else is removed, damaged or cut into, or if the main building is still standing, that is concealment_target_wrong.",
+    targetQ: "what was removed? concealment_target_ok is true only if exactly the main building is gone, down to a slab, and every attached or neighbouring building is still complete",
+    shape: "does the slab sit on the same footprint as the building in image 1 (same width, same position against the neighbours)?",
+    clip: "it is a construction time-lapse: it starts on the bare lot or slab, the MAIN BUILDING rises, and the clip ends on the complete building",
+    midFrames: "partly built (slab, framing, walls without roof)",
+  },
+};
+const modeOf = (concept) => MODE[concept?.conceal_mode] || MODE.cover;
+
 function sharedRules(concept) {
   const objects = (concept?.theatrical_objects || []).join(", ") || "the added object";
   return `Rules you must follow exactly:
 - The theatrical object (${objects}, its cables, its shadow) is the CONCEPT. It is never a defect in itself. Put anything you notice about the object's own look in object_notes; object_notes never fail the check.
-- The object MUST be on the MAIN BUILDING (the house the photograph is of). If it covers or sits on something else instead (a parked vehicle, a tree, the street, a neighbouring building) while the main building stays visible, that is concealment_target_wrong.
+- ${modeOf(concept).target}
 - Counting: ${rules.qa_rules.count_tolerance} Make every count in THIS reply only.
 - Scene elements that must not be added or removed: ${j([...rules.qa_rules.scene_elements, "shrubs", "signs", "street furniture"])}.
 - Look region by region (left, centre, right; sky, building, ground level) and report every element that appears, disappears, moves or changes shape between the reference and the generated image(s) in scene_changes, except the theatrical object itself.
@@ -64,15 +89,15 @@ const SHARED_FIELDS = `"concealment_target":"what the object covers, in a few wo
 export async function q1({ jobId, reelN, stage, referenceB64, stillB64, concept, model }) {
   const prompt = `You are checking a generated still against the reference photograph it was built from.
 
-Image 1 is the REFERENCE photograph. Image 2 is the GENERATED still. Image 2 is meant to show the reference scene with ONE theatrical object added that covers or hides the MAIN BUILDING, and nothing else changed.
+Image 1 is the REFERENCE photograph. Image 2 is the GENERATED still. Image 2 is meant to show the reference scene with ${modeOf(concept).still}.
 ${sharedRules(concept)}
 
-The main building should be covered in image 2 by design. Do NOT count its windows, doors, floors or balconies, and never fail because they are hidden.
+The main building is hidden or gone in image 2 by design. Do NOT count its windows, doors, floors or balconies, and never fail because they are not visible.
 
 Check, comparing image 1 and image 2 in this reply:
-1. concealment_target: what does the object cover? concealment_target_ok is true only if it covers the main building.
+1. concealment_target: ${modeOf(concept).targetQ}.
 2. Count parked vehicles and neighbouring buildings visible in each image.
-3. roof_line_match: if the building is covered, does the covered shape have the same outline, roof line and footprint as the building in image 1? If the building is not covered, answer true and rely on concealment_target_ok.
+3. roof_line_match: ${modeOf(concept).shape}
 4. camera_same: same camera position, framing and lens?
 5. Time of day, weather and light direction the same?
 6. scene_changes, region by region.
@@ -115,10 +140,10 @@ export async function q2({ jobId, reelN, stage, referenceB64, frames, concept, m
   const prompt = `You are checking a generated video against the reference photograph it was built from.
 
 Image 1 is the REFERENCE photograph.
-Images 2, 3 and 4 are frames at 33%, 66% and 100% of the clip. The clip is a REVEAL: the theatrical object starts on the MAIN BUILDING and lifts away, and the clip ends on the uncovered building, so image 4 is the frame that must match the reference.
+Images 2, 3 and 4 are frames at 33%, 66% and 100% of the clip. The clip is a REVEAL: ${modeOf(concept).clip}, so image 4 is the frame that must match the reference.
 ${sharedRules(concept)}
-- Score the BUILDING on image 4 only (${rules.qa_rules.score_property_on}). Images 2 and 3 are expected to be partly or wholly covered by the object; that is correct and never a fail.
-- concealment_target: in images 2 and 3, what is the object on? It must be the main building.
+- Score the BUILDING on image 4 only (${rules.qa_rules.score_property_on}). Images 2 and 3 are expected to be ${modeOf(concept).midFrames}; that is correct and never a fail.
+- concealment_target: in images 2 and 3, which building is the concept happening to? It must be the main building only.
 - Score the SCENE on all frames (${rules.qa_rules.score_scene_on}).
 - The camera is locked off. Any pan, zoom or parallax between frames is camera_moved.
 
@@ -231,18 +256,20 @@ export function normalise(json, target) {
 }
 
 /** The Q1 diff, phrased so it can be appended to the still prompt on a reroll. */
-export function rerollHint(result) {
+export function rerollHint(result, concept) {
   const bits = [];
   if (result.concealment_target_ok === false) {
     bits.push(
-      `A previous attempt put the cover on ${result.concealment_target || "the wrong thing"} instead of the house. The cover goes ONLY on the house building itself, over its roof and front wall. Parked vehicles, trees and the street stay completely uncovered and unchanged.`,
+      concept?.conceal_mode === "remove"
+        ? `A previous attempt got the removal wrong (${result.concealment_target || "wrong subject"}). Remove ONLY the house at the centre, down to its concrete slab. Every neighbouring building stays complete, and vehicles, trees and the street are unchanged.`
+        : `A previous attempt put the cover on ${result.concealment_target || "the wrong thing"} instead of the house. The cover goes ONLY on the house building itself, over its roof and front wall. Parked vehicles, trees and the street stay completely uncovered and unchanged.`,
     );
   }
   const others = result.rejects_found.filter((r) => !r.startsWith("concealment_target_wrong"));
   if (others.length) bits.push(`It was also rejected for: ${others.join("; ")}.`);
   if (result.diff_notes) bits.push(`Reviewer note: ${result.diff_notes}`);
   bits.push(
-    "Change ONLY the added cover. Every neighbouring building, every vehicle, every shrub and tree, the road, the sky, the light direction and the camera framing must match the reference photograph exactly. Do not add plants or objects.",
+    "Change ONLY what the concept changes. Every neighbouring building, every vehicle, every shrub and tree, the road, the sky, the light direction and the camera framing must match the reference photograph exactly. Do not add plants or objects.",
   );
   return bits.join(" ");
 }

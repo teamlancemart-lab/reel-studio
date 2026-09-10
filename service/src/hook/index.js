@@ -127,7 +127,7 @@ export async function buildHook(jobId, reelN, { supersedeReason = null } = {}) {
       approved = still;
       break;
     }
-    hint = rerollHint(still.q1);
+    hint = rerollHint(still.q1, concept);
     emit(jobId, "hook", { reelN, step: "Q1 reroll", attempt, because: still.q1.rejects_found });
   }
 
@@ -222,9 +222,11 @@ async function fallback(jobId, reelN, plan, ctx) {
   });
 }
 
-/** Ledger rows written while this hook was built, and what they cost. */
-function hookLedger(job, [from, to]) {
-  const rows = job.ledger.slice(from, to);
+/** Ledger rows this hook's own stages wrote while it was built, and what they cost.
+ *  Filtered by stage: interior glides running concurrently write into the same window. */
+export function hookLedger(job, [from, to], reelN) {
+  const stages = new Set([`H1:${reelN}`, `Q1:${reelN}`, `H2:${reelN}`, `Q2:${reelN}`]);
+  const rows = job.ledger.slice(from, to).filter((r) => reelN == null || stages.has(r.stage));
   return {
     rows: rows.map((r) => ({ stage: r.stage, model: r.provider_model, status: r.status, cost_inr: r.cost_inr, cost_usd: r.cost_usd })),
     inr: Number(rows.reduce((s, r) => s + (r.cost_inr || 0), 0).toFixed(3)),
@@ -262,7 +264,7 @@ function saveHook(jobId, reelN, record) {
   const full = {
     reel_n: reelN,
     ...record,
-    cost: hookLedger(job, record.ledger_rows),
+    cost: hookLedger(job, record.ledger_rows, reelN),
     created_at: new Date().toISOString(),
   };
   job.hooks[reelN] = full;

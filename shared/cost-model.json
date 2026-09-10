@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "updated": "2026-09-10",
   "fx": {
     "usd_inr": 84
@@ -305,7 +305,22 @@
     "warn_above_usd_per_listing": 1.5,
     "block_above_usd_per_listing": 3.0,
     "max_rerolls_per_hook": 1,
-    "on_second_failure": "fall back to free_2p5d hook"
+    "on_second_failure": "fall back to free_2p5d hook",
+    "on_interior_q2_failure": "fall back to 2.5d for that shot; never regenerate"
   },
-  "hook_duration_note": "8s is not a creative choice: Vertex requires durationSeconds=8 when lastFrame is supplied, and every reverse_conceal concept uses lastFrame."
+  "hook_duration_note": "8s is not a creative choice: Vertex requires durationSeconds=8 when lastFrame is supplied, and every reverse_conceal concept uses lastFrame.",
+  "interior_motion": {
+    "desc": "Veo 3.1 Lite camera glide per hero interior. No lastFrame, so 4s is allowed (8s is only forced by lastFrame). No reroll: a Q2 failure falls back to free 2.5d.",
+    "clip": {
+      "model": "veo-3.1-lite",
+      "duration_s": 4
+    },
+    "q2": {
+      "model": "gemini-2.5-flash",
+      "in_tokens": 2800,
+      "out_tokens": 400
+    },
+    "max_hero_interiors": 3,
+    "reuse": "generated once per job, reused by all reels"
+  }
 }

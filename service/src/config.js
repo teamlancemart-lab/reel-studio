@@ -50,6 +50,11 @@ export const config = {
   /** The paid-video gate. Exactly the string "true" opens it. Stays shut until Stage 6. */
   generativeEnabled: process.env.GENERATIVE_ENABLED === "true",
 
+  /** Interior motion. "2.5d" (default, compliance-strict: real stills, parallax and Ken
+   *  Burns) or exactly "veo": approved, labelled Veo camera glides on up to three hero
+   *  interiors. Paid clips still need GENERATIVE_ENABLED as well. */
+  interiorMotion: process.env.INTERIOR_MOTION === "veo" ? "veo" : "2.5d",
+
   maxPhotos: 40,
   minPhotos: 8,
   uploadFieldName: "photos",

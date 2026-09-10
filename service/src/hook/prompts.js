@@ -83,15 +83,22 @@ Real photographic ${s.footage}, bright daylight, no cuts.`,
       };
 
     case "block_build":
+      /* Build itself, the default paid hook. docs/reference-reel-anatomy-v1.md 2.2
+         (Electricity): bare lot, slab, framing rising floor by floor, walls, roof, then
+         the crossfade to the true photo. Veo cannot be trusted to build the RIGHT house
+         from an empty lot — that is the still_then_clip failure — so it is generated
+         the other way: the real house (first frame) comes down to its slab (last frame),
+         and the clip is reversed. The house that assembles is the real one by
+         construction, and the reel ends on the untouched photo. */
       return {
-        template: "hook-v4.skeleton.block_build",
+        template: "electricity.build_itself.reverse_conceal",
         verified: false,
-        still_prompt: `Using the reference ${s.photo} exactly as it is, change ONE thing: the single house at the centre of the frame is replaced by its bare, level building lot with a clean concrete slab on the same footprint.
+        still_prompt: `Using the reference ${s.photo} exactly as it is, change ONE thing: the single house at the centre of the frame is gone, and in its place is its empty building lot with a clean, level concrete foundation slab on exactly the same footprint. If the house shares walls with neighbouring houses, those neighbouring houses stay complete and untouched, and their exposed side walls are plain brick.
 Everything else is identical to the reference: same neighbouring buildings, same roads and driveway, same trees and shrubs, same vehicles, same sky, same time of day, same light and shadow direction, ${s.position}.
-Photographic, matching the exposure and colour of the reference. No people. No text. No logos. No machinery.`,
+Photographic, matching the exposure and colour of the reference. No people. No text. No logos. No machinery. No construction equipment.`,
         clip_prompt: `${s.clipOpen}, camera completely locked off, no camera movement whatsoever.
-The house at the centre of the frame dismantles itself smoothly piece by piece, roof first, then walls, then framing, down to a bare concrete slab on the same footprint.
-The neighbouring buildings, ${s.ground}, the trees, the shrubs, the parked vehicles and the sky remain exactly as they are and never change. Nothing else in the scene moves.
+Construction time-lapse in reverse: the house at the centre of the frame takes itself apart smoothly and evenly. First the roof lifts away, then the walls come down floor by floor, brick course by brick course, down to the timber framing, then the framing disappears, leaving only the clean concrete foundation slab on the empty lot.
+The neighbouring buildings, ${s.ground}, the trees, the shrubs, the parked vehicles and the sky remain exactly as they are and never change. No people, no machinery. Nothing else in the scene moves.
 Real photographic ${s.footage}, bright daylight, no cuts.`,
       };
 

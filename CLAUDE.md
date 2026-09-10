@@ -16,8 +16,13 @@ vertical reels. Each reel is Hook + Walkthrough + CTA. 9:16 master, 16:9 derivat
 - Every brain node has a fixed JSON schema, a status, a cost, a lock and a regenerate.
   Regenerating one node never re-runs its siblings; descendants go stale with a visible
   rebuild cost.
-- Interiors are NEVER AI-altered. Real photos with depth parallax, Ken Burns, speed ramps
-  and transitions only. This is a hard block, no override.
+- Interiors are real photos with depth parallax, Ken Burns, speed ramps and transitions.
+  ONE exception, opt-in per deployment (INTERIOR_MOTION=veo, default 2.5d, decided
+  2026-09-10): a Veo camera glide on at most 3 hero interiors, first frame = the real
+  photo, architecture locked, interior Q2 against the photo (any wall, door, window or
+  fixture change rejects it and the shot stays 2.5d), a motion disclosure on the segment
+  and in the CTA. Anything else generated on an interior is a hard block
+  (INTERIOR_ALTERED), no override.
 - Every hook ends with a crossfade to the untouched hero photo (the truth lock). The
   assembly cuts a 2 to 3 second window from the reveal, never the whole clip.
 - The asset pool is built ONCE per job and reused by all three reels. If any reel triggers

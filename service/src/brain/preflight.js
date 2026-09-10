@@ -14,7 +14,8 @@
  *    a compliance rule because its inputs do not exist yet is exactly the failure mode
  *    this gate exists to prevent.
  */
-import { rules, config } from "../config.js";
+import { rules, config, costModel } from "../config.js";
+import { selectHeroInteriors, glideEstimate } from "../interiors/glide.js";
 import { callText } from "../lib/vertex.js";
 import { runNode } from "./runner.js";
 import * as P from "./prompts.js";
@@ -182,7 +183,16 @@ const PREDICATES = {
     const bad = c.recipes.flatMap((r) =>
       r.segments
         .filter((s) => s.kind === "interior" && s.source.type !== "photo")
-        .map((s) => `${r.reelId} ${s.kind} source.type=${s.source.type}`),
+        .map((s) => {
+          const pid = s.source.photoId ?? s.source.id;
+          const rec = c.interiorClips?.[pid];
+          const why = [];
+          if (c.interiorMotion !== "veo") why.push("INTERIOR_MOTION is not veo");
+          if (rec?.status !== "approved" || !rec?.q2?.pass) why.push(`clip for ${pid} is ${rec?.status ?? "missing"}`);
+          if (!s.overlays.some((o) => o.kind === "disclosure" && o.lines.join(" ").trim())) why.push("no motion disclosure on the segment");
+          return why.length ? `${r.reelId} interior ${pid}@${s.tIn}s source.type=${s.source.type}: ${why.join(", ")}` : null;
+        })
+        .filter(Boolean),
     );
     return bad.length ? bad.join("; ") : null;
   },
@@ -307,8 +317,12 @@ const PREDICATES = {
   },
 
   BUDGET: (c) => {
-    const total = (c.hooks || []).reduce((s, h) => s + (h.est_cost?.total_usd || 0), 0);
-    return total > 3.0 ? `sum of hook est_cost.total_usd = $${total.toFixed(2)}` : null;
+    const hooks = (c.hooks || []).reduce((s, h) => s + (h.est_cost?.total_usd || 0), 0);
+    const glides = c.interiorEstimate?.total_usd || 0;
+    const total = hooks + glides;
+    return total > 3.0
+      ? `hooks $${hooks.toFixed(2)} + interior glides $${glides.toFixed(2)} = $${total.toFixed(2)}`
+      : null;
   },
 
   /* ---- copy rules that read the copy AND the recipe, so a hand edit to either is caught. */
@@ -340,7 +354,7 @@ const PREDICATES = {
       for (const seg of r.segments) {
         // The plan hosts any layout fact; the hook has its own title card; the CTA is a card.
         if (["floor_plan", "hook", "cta"].includes(seg.kind)) continue;
-        const room = roomOf[seg.source?.id];
+        const room = roomOf[seg.source?.photoId ?? seg.source?.id];
         const fam = room ? ROOM_FAMILY[room] : null;
         if (!fam) continue;
         for (const o of seg.overlays) {
@@ -519,11 +533,16 @@ export function preGenerationCheck(job, reelN) {
   if (!hooks.find((h) => h.reel_n === reelN)) {
     return { pass: false, results: [{ rule_id: "NO_B4", level: "BLOCK", message: `reel ${reelN} has no B4 hook plan` }] };
   }
+  const interiorEstimate =
+    config.interiorMotion === "veo"
+      ? glideEstimate(selectHeroInteriors(job).filter((h) => !job.interior_clips?.[h.photo_id]).length, costModel)
+      : null;
   const ctx = {
     market: truth.market,
     truth,
     hooks,
     reelN,
+    interiorEstimate,
     allAssets: job.nodes.B0?.payload?.assets || [],
     strings: [],
     phraseScan: [],

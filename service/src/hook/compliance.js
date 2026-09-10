@@ -39,3 +39,25 @@ export function hookDisclosure({ market, truth, truthLockS }) {
   }
   return { label, ctaLine, problems };
 }
+
+/**
+ * The disclosure an approved interior glide carries, and the CTA line once any scene in
+ * the reel is generated. With glides the "opening scene" line alone would be false, so
+ * rules.json motion_cta_line replaces it.
+ */
+export function motionDisclosure({ market, truth, hookGenerated = false }) {
+  const spec = rules.required_overlays[market] || {};
+  const values = { originals_url: truth?.compliance_context?.originals_url || truth?.facts?.originals_url };
+  const label = spec.motion_label || spec.hook_label || "";
+  /* Claiming a real opening shot was digitally created is a misrepresentation too: the
+     first glide export said "Opening scene and camera moves digitally created" over a
+     free sky_drop hook. The opening is only named when the hook really was generated. */
+  const template = hookGenerated ? spec.motion_cta_line : spec.motion_only_cta_line ?? spec.motion_cta_line;
+  const ctaLine = template ? fill(template, values) : null;
+  const problems = [];
+  if (!label) problems.push(`rules.json required_overlays.${market}.motion_label is empty`);
+  if (market === "us" && (!ctaLine || hasPlaceholder(ctaLine))) {
+    problems.push(`motion CTA line missing or has an unfilled placeholder: "${ctaLine}"`);
+  }
+  return { label, ctaLine, problems };
+}

@@ -83,8 +83,30 @@ async function probeSize(file) {
  * One segment -> one mp4 at MW x MH, `duration` long.
  * The motion amplitudes are the same numbers as motionAt() in draw.ts.
  */
-async function renderSegment({ seg, duration, sourcePath, out, hookPath, hookStartS = 0 }) {
+async function renderSegment({ seg, duration, sourcePath, out, hookPath, hookStartS = 0, glide = null }) {
   const frames = Math.max(1, Math.round(duration * FPS));
+
+  /* An approved Veo glide replaces the still for this interior. The clip starts ON the
+     real photo, so a push plays it forward from the photo and a pull plays the same
+     stretch reversed, landing on the photo: either way the shot is anchored to the
+     untouched frame. Up to max_speedup so a 1s fast-tier slot still shows the move. */
+  if (seg.kind === "interior" && glide) {
+    const speed = Math.max(1, Math.min(rules.interior_motion.max_speedup, glide.durationS / duration));
+    const window = Math.min(glide.durationS, duration * speed);
+    const pull = seg.motion === "pull";
+    await sh([
+      "-i", glide.clipPath,
+      "-vf",
+      `trim=0:${window.toFixed(3)},setpts=PTS-STARTPTS,${pull ? "reverse," : ""}` +
+        `setpts=PTS/${speed.toFixed(4)},fps=${FPS},` +
+        `scale=${MW}:${MH}:force_original_aspect_ratio=increase,crop=${MW}:${MH},setsar=1,` +
+        `tpad=stop_mode=clone:stop_duration=${duration.toFixed(3)},format=yuv420p`,
+      "-frames:v", String(frames),
+      "-an", "-r", String(FPS),
+      out,
+    ]);
+    return out;
+  }
 
   // The hook segment is a video, not a photo.
   if (seg.kind === "hook" && hookPath) {
@@ -247,6 +269,8 @@ export async function renderReel(recipe, opts) {
   const {
     hookPath = null,
     hookStartS = 0,
+    /* (segment) => { clipPath, durationS } | null. Only approved glides; export decides. */
+    glideFor = () => null,
     photoPath,
     workDir,
     outPath,
@@ -281,15 +305,16 @@ export async function renderReel(recipe, opts) {
   let cacheHits = 0;
   for (const p of plan) {
     const out = path.join(segDir, `seg_${String(p.i).padStart(2, "0")}.mp4`);
-    const sourcePath = p.seg.source.id ? photoPath(p.seg.source.id) : null;
+    const sourcePath = p.seg.source.id ? photoPath(p.seg.source.photoId ?? p.seg.source.id) : null;
     const isHook = p.seg.kind === "hook" && hookPath;
+    const glide = glideFor(p.seg);
 
     let cached = null;
     if (segmentCacheDir && !isHook) {
       const { overlays: _o, ...segNoOverlays } = p.seg;
       const key = crypto
         .createHash("sha1")
-        .update(JSON.stringify({ seg: segNoOverlays, d: p.duration.toFixed(4), src: sourcePath, MW, MH, FPS }))
+        .update(JSON.stringify({ seg: segNoOverlays, d: p.duration.toFixed(4), src: sourcePath, glide: glide?.clipPath ?? null, MW, MH, FPS }))
         .digest("hex")
         .slice(0, 16);
       cached = path.join(segmentCacheDir, `${key}.mp4`);
@@ -300,7 +325,7 @@ export async function renderReel(recipe, opts) {
       fs.copyFileSync(cached, out);
       cacheHits += 1;
     } else {
-      await renderSegment({ seg: p.seg, duration: p.duration, sourcePath, out, hookPath, hookStartS });
+      await renderSegment({ seg: p.seg, duration: p.duration, sourcePath, out, hookPath, hookStartS, glide });
       if (cached) {
         fs.mkdirSync(segmentCacheDir, { recursive: true });
         fs.copyFileSync(out, cached);

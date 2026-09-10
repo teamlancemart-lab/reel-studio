@@ -13,11 +13,14 @@ import { fmtInr } from "@/lib/nodes";
 import {
   exportReel,
   fileUrl,
+  generateGlides,
   generateHook,
   getHooks,
+  getInteriors,
   retuneReel,
   type HookReel,
   type HooksResponse,
+  type InteriorsResponse,
 } from "@/lib/hooks";
 
 export default function HookPanel({ jobId }: { jobId: string }) {
@@ -77,6 +80,7 @@ export default function HookPanel({ jobId }: { jobId: string }) {
           {error}
         </p>
       )}
+      <InteriorMotion jobId={jobId} busy={busy} act={act} />
       <div className="space-y-3">
         {data.reels.map((reel) => (
           <ReelCard
@@ -297,6 +301,76 @@ function ReelCard({
           ))}
         </ol>
       )}
+    </div>
+  );
+}
+
+/**
+ * Interior motion. Off unless the service runs with INTERIOR_MOTION=veo. The estimate is
+ * on the button, and every clip shows its QA verdict: a rejected glide is not hidden,
+ * it is the reason that room stayed 2.5d.
+ */
+function InteriorMotion({
+  jobId,
+  busy,
+  act,
+}: {
+  jobId: string;
+  busy: string | null;
+  act: (key: string, fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [data, setData] = useState<InteriorsResponse | null>(null);
+  const load = useCallback(() => {
+    getInteriors(jobId).then(setData).catch(() => setData(null));
+  }, [jobId]);
+  useEffect(() => {
+    getInteriors(jobId).then(setData).catch(() => setData(null));
+  }, [jobId]);
+  useEffect(() => {
+    if (!data?.generating) return;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [data?.generating, load]);
+
+  if (!data) return null;
+  const enabled = data.interiorMotion === "veo" && data.generativeEnabled;
+  return (
+    <div className="mb-3 rounded-lg border border-neutral-800 p-2.5 text-[10px] text-neutral-400">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[11px] font-semibold text-neutral-200">Interior motion</span>
+        <span>{data.interiorMotion === "veo" ? "Veo glides on hero rooms" : "2.5d (default)"}</span>
+      </div>
+      <ul className="mt-1 space-y-0.5">
+        {data.heroes.map((h) => {
+          const rec = data.clips[h.photo_id];
+          return (
+            <li key={h.photo_id}>
+              <span className="font-mono text-neutral-200">{h.photo_id}</span> {h.category} ({h.room_class}) ·{" "}
+              {!rec ? (
+                "no clip"
+              ) : (
+                <span className={rec.status === "approved" ? "text-emerald-300" : "text-rose-300"}>
+                  {rec.status}
+                  {rec.reason ? ` — ${rec.reason}` : ""}
+                  {rec.cost ? ` · ${fmtInr(rec.cost.inr)}` : ""}
+                </span>
+              )}
+              {rec?.clip_file && (
+                <a className="ml-1 underline" href={fileUrl(jobId, rec.clip_file)} target="_blank" rel="noreferrer">
+                  clip
+                </a>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <button
+        onClick={() => act("glides", () => generateGlides(jobId)).then(load)}
+        disabled={!enabled || data.generating || data.estimate.count === 0 || busy !== null}
+        className="mt-1.5 rounded bg-amber-400 px-2.5 py-1 text-[11px] font-semibold text-neutral-900 disabled:opacity-40"
+      >
+        {data.generating ? "Generating…" : `Generate ${data.estimate.count} glides · est ${fmtInr(data.estimate.total_inr)}`}
+      </button>
     </div>
   );
 }

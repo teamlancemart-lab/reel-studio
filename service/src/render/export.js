@@ -11,10 +11,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { rules } from "../config.js";
+import { rules, config } from "../config.js";
 import { readJob, writeJob, emit, jobDir, outDir, photosDir } from "../store.js";
 import { cutAndLock, HOOK_WINDOW_S } from "../hook/paid.js";
-import { hookDisclosure } from "../hook/compliance.js";
+import { hookDisclosure, motionDisclosure } from "../hook/compliance.js";
+import { selectHeroInteriors } from "../interiors/glide.js";
 import { evaluateRules } from "../brain/preflight.js";
 import { renderReel } from "./render.js";
 
@@ -126,6 +127,49 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
       band.lines.push(disclosure.ctaLine);
     }
   }
+  /* ------------------------------------------------------- interior glides */
+  /* INTERIOR_MOTION=veo swaps a still for its APPROVED glide. Export never generates:
+     a hero interior without a clip is recorded and stays 2.5d, because a reel that
+     triggers new clip generation breaks the build-once asset pool. */
+  const glides = [];
+  const glidesMissing = [];
+  if (config.interiorMotion === "veo") {
+    const clips = job.interior_clips || {};
+    for (const seg of recipe.segments) {
+      if (seg.kind !== "interior") continue;
+      const pid = seg.source.photoId ?? seg.source.id;
+      const rec = clips[pid];
+      if (!rec) continue;
+      if (rec.status !== "approved") {
+        glides.push({ photo_id: pid, used: false, status: rec.status, reason: rec.reason });
+        continue;
+      }
+      seg.source = { type: "generated", id: `glide:${pid}`, photoId: pid, url: `/jobs/${jobId}/file/${rec.clip_file}` };
+      glides.push({ photo_id: pid, used: true, status: "approved", tIn: seg.tIn, tOut: seg.tOut, motion: seg.motion });
+    }
+    for (const h of selectHeroInteriors(job)) {
+      if (!clips[h.photo_id]) glidesMissing.push(h.photo_id);
+    }
+    if (glides.some((g) => g.used)) {
+      const motion = motionDisclosure({ market: truth.market, truth, hookGenerated: Boolean(paid) });
+      if (motion.problems.length) {
+        throw Object.assign(new Error(`INTERIOR_ALTERED: ${motion.problems.join("; ")}`), { status: 409 });
+      }
+      for (const seg of recipe.segments) {
+        if (seg.source.type !== "generated" || seg.kind !== "interior") continue;
+        seg.overlays = seg.overlays.filter((o) => o.kind !== "disclosure");
+        seg.overlays.push({ kind: "disclosure", system: "address_only", lines: [motion.label], tIn: seg.tIn, tOut: seg.tOut, fadeS: 0.05 });
+      }
+      const band = recipe.segments.find((s) => s.kind === "cta")?.overlays.find((o) => o.kind === "cta_band");
+      if (band) {
+        // The motion line covers the opening scene too; never print both.
+        band.lines = band.lines.filter((l) => l !== disclosure?.ctaLine);
+        if (!band.lines.includes(motion.ctaLine)) band.lines.push(motion.ctaLine);
+      }
+      disclosure = { ...(disclosure || {}), motionLabel: motion.label, ctaLine: motion.ctaLine };
+    }
+  }
+
   recipe.truthLock = {
     atS: Number(reelLockAt.toFixed(3)),
     frames: hook.truth_lock_frames ?? rules.job_defaults.truth_lock_frames,
@@ -138,9 +182,15 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
     return photo ? path.join(photosDir(jobId), photo.storedName) : null;
   };
   const outPath = path.join(outDir(jobId), `${tag}.mp4`);
+  const glideFor = (seg) => {
+    if (seg.kind !== "interior" || seg.source.type !== "generated") return null;
+    const rec = job.interior_clips?.[seg.source.photoId];
+    return rec?.status === "approved" ? { clipPath: rec.clip_path, durationS: rec.clip_duration_s } : null;
+  };
   const rendered = await renderReel(recipe, {
     hookPath: hookClip,
     hookStartS,
+    glideFor,
     photoPath,
     workDir: vDir,
     outPath,
@@ -159,9 +209,11 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
       overlayBoxes: rendered.overlayBoxes,
       recipes: [recipe],
       allAssets: job.nodes.B0?.payload?.assets || [],
+      interiorMotion: config.interiorMotion,
+      interiorClips: job.interior_clips || {},
     },
     "pre_export",
-    { only: ["Q_FAIL_TWICE", "SAFE_ZONE", "CAPTION_DEFECT", "CAPTION_SUBJECT_MISMATCH"] },
+    { only: ["Q_FAIL_TWICE", "SAFE_ZONE", "CAPTION_DEFECT", "CAPTION_SUBJECT_MISMATCH", "INTERIOR_ALTERED"] },
   );
   const blocks = results.filter((r) => r.level === "BLOCK");
 
@@ -198,7 +250,12 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
       source_photo_id: hook.source_photo_id,
       ssim_hook_last_frame_vs_hero: truthLockSsim,
     },
-    disclosure: disclosure ? { label: disclosure.label, cta_line: disclosure.ctaLine } : null,
+    disclosure: disclosure
+      ? { label: disclosure.label ?? null, motion_label: disclosure.motionLabel ?? null, cta_line: disclosure.ctaLine }
+      : null,
+    interior_motion: config.interiorMotion,
+    glides,
+    glides_missing: glidesMissing,
     files: {
       master: path.basename(outPath),
       silent: path.basename(rendered.silentPath),

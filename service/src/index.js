@@ -16,6 +16,8 @@
  *                                              reverse, cut, overlays, assembly. Zero
  *                                              model calls, measured by the ledger.
  *   GET  /jobs/:id/reels/:reelN/versions
+ *   GET  /jobs/:id/interiors                   hero interiors, estimate, glide records
+ *   POST /jobs/:id/interiors/generate          Veo glides (INTERIOR_MOTION=veo only)
  *
  * The GCP service-account key lives here and only here. /web never sees it.
  */
@@ -23,7 +25,7 @@ import express from "express";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
-import { config, versions, rules } from "./config.js";
+import { config, versions, rules, costModel } from "./config.js";
 import {
   newJobId,
   createJob,
@@ -46,6 +48,7 @@ import { rebuildCostInr, staleKeys, NODE_LABEL } from "./brain/graph.js";
 import { preGenerationCheck } from "./brain/preflight.js";
 import { buildHook } from "./hook/index.js";
 import { exportReel } from "./render/export.js";
+import { buildGlides, selectHeroInteriors, glideEstimate } from "./interiors/glide.js";
 
 /** Which schema an edited payload is validated against, by node. */
 const SCHEMA_BY_NODE = {
@@ -89,6 +92,7 @@ app.get("/health", async (_req, res) => {
     python,
     fonts,
     vertex: vertexStatus(),
+    interiorMotion: config.interiorMotion,
   });
 });
 
@@ -388,6 +392,38 @@ app.get("/jobs/:id/reels/:reelN/versions", (req, res) => {
   const job = readJob(req.params.id);
   if (!job) return res.status(404).json({ error: "no such job" });
   res.json({ versions: job.reels?.[req.params.reelN]?.versions ?? [] });
+});
+
+/* ------------------------------------------------------ interior glides */
+
+const glideRuns = new Set();
+
+app.get("/jobs/:id/interiors", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  const heroes = selectHeroInteriors(job);
+  const pending = heroes.filter((h) => !job.interior_clips?.[h.photo_id]);
+  res.json({
+    interiorMotion: config.interiorMotion,
+    generativeEnabled: config.generativeEnabled,
+    generating: glideRuns.has(job.jobId),
+    heroes,
+    estimate: glideEstimate(pending.length, costModel),
+    clips: job.interior_clips || {},
+  });
+});
+
+app.post("/jobs/:id/interiors/generate", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  if (config.interiorMotion !== "veo") return res.status(409).json({ error: "INTERIOR_MOTION is not 'veo'; interiors stay 2.5d" });
+  if (!config.generativeEnabled) return res.status(409).json({ error: "GENERATIVE_ENABLED is not 'true'" });
+  if (glideRuns.has(job.jobId)) return res.status(409).json({ error: "glides already generating for this job" });
+  glideRuns.add(job.jobId);
+  res.status(202).json({ ok: true, heroes: selectHeroInteriors(job) });
+  buildGlides(job.jobId, { photoIds: req.body?.photoIds ?? null })
+    .catch((err) => emit(job.jobId, "interior", { step: "failed", reason: err.message.slice(0, 400) }))
+    .finally(() => glideRuns.delete(job.jobId));
 });
 
 /* ------------------------------------------------------------------ SSE */

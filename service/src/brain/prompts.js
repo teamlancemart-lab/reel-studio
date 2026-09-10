@@ -360,7 +360,7 @@ Score each remaining concept: scroll_stop x engine_survival x compliance_fit x a
 - Skip any concept whose restrictions include "never_default".
 - paid_allowed is ${paidAllowed}. ${
       paidAllowed
-        ? "A concept whose default_path is not free_2p5d may be chosen."
+        ? `A concept whose default_path is not free_2p5d may be chosen. The paid concept is ${j(rules.hook_bank.find((h) => h.default_paid)?.id ?? null)} (default_paid) unless its needs or restrictions exclude this property.`
         : "Another reel already has the job's one paid hook: choose ONLY concepts whose default_path is free_2p5d."
     }
 

@@ -133,3 +133,32 @@ export async function retuneReel(jobId: string, reelN: number, windowStart: numb
     }),
   );
 }
+
+export interface GlideRecord {
+  photo_id: string;
+  category: string;
+  room_class: string;
+  status: "approved" | "rejected" | "failed";
+  reason: string | null;
+  clip_file?: string | null;
+  qa_files?: (string | null)[];
+  q2?: QAResult & { changes?: { frame: number; element: string; change: string }[] };
+  cost?: { inr: number };
+}
+
+export interface InteriorsResponse {
+  interiorMotion: "2.5d" | "veo";
+  generativeEnabled: boolean;
+  generating: boolean;
+  heroes: { photo_id: string; category: string; room_class: string; score: number }[];
+  estimate: { per_clip_inr: number; count: number; total_inr: number };
+  clips: Record<string, GlideRecord>;
+}
+
+export async function getInteriors(jobId: string): Promise<InteriorsResponse> {
+  return json(await fetch(`${SERVICE_URL}/jobs/${jobId}/interiors`, { cache: "no-store" }));
+}
+
+export async function generateGlides(jobId: string) {
+  return json(await fetch(`${SERVICE_URL}/jobs/${jobId}/interiors/generate`, { method: "POST" }));
+}

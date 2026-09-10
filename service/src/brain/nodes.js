@@ -255,6 +255,14 @@ export function hookEstimate(generationPath, conceptId) {
   };
 }
 
+/** rules.json restrictions for the default paid concept, checked against this listing. */
+export function defaultPaidEligible(concept, truth, assets) {
+  const r = concept.restrictions || [];
+  if (r.includes("not_for_towers") && ["apartment", "penthouse"].includes(truth.facts.property_type)) return false;
+  const pool = new Set(assets.map((a) => a.room_class));
+  return (concept.needs || []).every((need) => need.split("|").some((c) => pool.has(c)));
+}
+
 /**
  * Hook selection. The only node whose output leads to spend, so it carries the full
  * payload preview: prompts, engine, duration, cost and the truth-lock plan.
@@ -306,6 +314,22 @@ export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicke
       if (json.generation_path !== "free_2p5d" && !paidAllowed) {
         throw new Error(
           `a paid hook is already planned for this job (cost-model presets.one_paid_hook); pick a free_2p5d concept, not "${json.concept_id}"`,
+        );
+      }
+      /* The default paid hook is the rules.json concept marked default_paid (build
+         itself). It needs no aerial and no clear foreground; the drape put its cover on
+         a parked SUV every time on Lexington. Another paid concept is only accepted
+         when the default's restrictions exclude this property. */
+      const defaultPaid = rules.hook_bank.find((h) => h.default_paid);
+      if (
+        json.generation_path !== "free_2p5d" &&
+        defaultPaid &&
+        json.concept_id !== defaultPaid.id &&
+        defaultPaidEligible(defaultPaid, truth, assets) &&
+        !alreadyPicked.includes(defaultPaid.id)
+      ) {
+        throw new Error(
+          `the default paid hook is ${defaultPaid.id} and this property qualifies for it; "${json.concept_id}" is only allowed when ${defaultPaid.id} is excluded`,
         );
       }
       if (!["free_2p5d", "reverse_conceal"].includes(json.generation_path)) {
