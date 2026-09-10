@@ -138,6 +138,7 @@ Rules:
 - specials: 3 to 5 things that make this listing distinct, each tied to a fact or an observed item by id. No adjectives that describe the buyer.
 - never_claim: list every claim that would fail compliance for this market and listing: schools with quality words, safety, family or demographic words, religious proximity, amenities not in the sanctioned plan (in), area on any basis except carpet (in), luxury without stated criteria (in), price drop or sold in N days unless the form supplies the prior price or sale date, any twilight, fireworks, people, vehicles or furniture changes in generated media.
 - provable_numbers: numbers the copy may use, each with its source field.
+- defects: every condition problem visible in the photos or stated on the form (damage, water stains, cracks, mould, broken fixtures, peeling, needed repairs), each with its photo id and an id like "def1". Record them so nobody markets them. A defect NEVER appears in observed, specials or provable_numbers.
 - compliance_context: market, rera_project, rera_agent, rera_portal_url, brokerage, mls_number, is_new_launch, is_under_construction, is_brokered, disclosure_required_us (true when market=us), disclosure_required_in (true when any hook is generative).
 
 Give every observed item an id like "obs1", every special "sp1", every provable number "pn1". These ids are what the copy node must cite, so they must be stable and unique.
@@ -232,7 +233,7 @@ ${j(assets.map((a) => ({ photo_id: a.photo_id, room_class: a.room_class, scores:
 /* ------------------------------------------------------------------- B6 */
 
 export function b6Prompt(
-  { reelN, truth, persona, format, shots, market, hookIsGenerated = false },
+  { reelN, truth, persona, format, shots, assetsById = {}, market, hookIsGenerated = false },
   retryHint,
 ) {
   const cta = rules.cta_forms[market] || [];
@@ -243,7 +244,9 @@ export function b6Prompt(
 Grammar: every card is a title line (2 to 5 words, max 40 chars) plus at most one subtitle line (facts only, under 9 words, max 70 chars). Lower third. No exclamation marks. No emoji.
 - hook_card: by title_card_system "${format.title_card_system}". price_stack: price, then address line, then beds | baths | area with basis label. status_card: status word, address. number_first: "What {price} gets you in {locality}". search_intent: "Homes for sale in {locality}". address_only: address only.
 - proof_card: one special from specials with its source.
-- fact_captions: one per shot whose caption_slot is "fact", each carrying that shot_id. Facts only, from provable_numbers or observed items.
+- fact_captions: one per shot whose caption_slot is "fact", each carrying that shot_id. Facts only, from provable_numbers or observed items. A caption about a room goes ONLY on a shot of that room_class: a kitchen fact on a kitchen shot, a facade or porch fact on an exterior shot. If no listed shot is that room, leave the fact out. Whole-property numbers (price, beds, baths, area, year) do not go on a single room.
+- proof_card: the proof shot is a ${j(assetsById[shots.find((s) => s.slot === "proof")?.photo_id]?.room_class ?? shots.find((s) => s.slot === "proof")?.room_class ?? "none")}; the special you choose must be about that room.
+- Never mention the property's condition, damage, repairs or defects anywhere, even if you know of them.
 - floor_plan_card: area with basis label plus one layout fact.
 - cta_card: action line from ${j(cta)}, agent_line, and compliance_lines from ${j(overlays.cta_lines || [])} with the placeholders filled from compliance_context. Leave a line out entirely if its value is missing rather than printing an empty placeholder.${
       hookIsGenerated
@@ -265,7 +268,7 @@ Never characterise the buyer. Never rate a school. Never use "luxury" for market
 listing truth: ${j({ facts: truth.facts, observed: truth.observed, specials: truth.specials, provable_numbers: truth.provable_numbers, never_claim: truth.never_claim, compliance_context: truth.compliance_context })}
 persona: ${j(persona)}
 format: ${j(format)}
-shots needing a caption: ${j(shots.filter((s) => s.caption_slot !== "none").map((s) => ({ shot_id: s.shot_id, slot: s.slot, room_class: s.room_class, caption_slot: s.caption_slot })))}${schemaBlock("CopySet")}${JSON_ONLY}`,
+shots needing a caption: ${j(shots.filter((s) => s.caption_slot !== "none").map((s) => ({ shot_id: s.shot_id, slot: s.slot, room_class: assetsById[s.photo_id]?.room_class ?? s.room_class, caption_slot: s.caption_slot })))}${schemaBlock("CopySet")}${JSON_ONLY}`,
     retryHint,
   );
 }

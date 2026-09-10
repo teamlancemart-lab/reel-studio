@@ -151,10 +151,17 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
   fs.writeFileSync(path.join(outDir(jobId), `${tag}_recipe.json`), JSON.stringify(recipe, null, 2));
 
   /* ------------------------------------------------- export-time preflight */
+  /* Evaluated on the EFFECTIVE recipe — the strings that were actually rendered,
+     including the disclosure and CTA lines export added — not on B6's payload. */
   const { results } = evaluateRules(
-    { hookRecord: hook, overlayBoxes: rendered.overlayBoxes },
+    {
+      hookRecord: hook,
+      overlayBoxes: rendered.overlayBoxes,
+      recipes: [recipe],
+      allAssets: job.nodes.B0?.payload?.assets || [],
+    },
     "pre_export",
-    { only: ["Q_FAIL_TWICE", "SAFE_ZONE"] },
+    { only: ["Q_FAIL_TWICE", "SAFE_ZONE", "CAPTION_DEFECT", "CAPTION_SUBJECT_MISMATCH"] },
   );
   const blocks = results.filter((r) => r.level === "BLOCK");
 

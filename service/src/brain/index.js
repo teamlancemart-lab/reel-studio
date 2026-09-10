@@ -144,7 +144,7 @@ export async function runBrain(jobId, { resume = false } = {}) {
     setStage(jobId, `brain:B6:${reelN}`, 0.6 + 0.08 * reelN);
     copySets.push(
       await reuse(`B6:${reelN}`, () =>
-        runB6(jobId, reelN, { truth, persona, format: entry, shots: shotList.shots }),
+        runB6(jobId, reelN, { truth, persona, format: entry, shots: shotList.shots, assets }),
       ),
     );
 
@@ -292,6 +292,7 @@ export async function regenerateNode(jobId, nodeKey) {
         persona: payloadOf("B2"),
         format: entry,
         shots: payloadOf("B5").shots,
+        assets: survivors(),
       });
     }
     case "B7": {
@@ -307,6 +308,11 @@ export async function regenerateNode(jobId, nodeKey) {
     }
     case "B8": {
       const formats = payloadOf("B3");
+      /* The gate reads the recipes the reels will actually be built from. Regenerating
+         B8 alone used to read job.recipes as stored, which can predate a B6 regenerate:
+         it BLOCKed on captions that no longer existed, and could as easily PASS a reel
+         whose new copy was the problem. Rebuilding is pure and free. */
+      const { recipes: current } = rebuildRecipes(jobId);
       return runB8(jobId, {
         stage: "pre_export",
         truth: payloadOf("B1"),
@@ -315,7 +321,7 @@ export async function regenerateNode(jobId, nodeKey) {
         assets: survivors(),
         copySets: formats.reels.map((r) => payloadOf(`B6:${r.reel_n}`)),
         pacings: formats.reels.map((r) => payloadOf(`B7:${r.reel_n}`)),
-        recipes: job.recipes || [],
+        recipes: current,
         tracks,
         hooks: formats.reels.map((r) => job.nodes[`B4:${r.reel_n}`]?.payload).filter(Boolean),
       });

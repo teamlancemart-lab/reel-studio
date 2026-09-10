@@ -19,6 +19,7 @@ import { callText } from "../lib/vertex.js";
 import { runNode } from "./runner.js";
 import * as P from "./prompts.js";
 import { hookDisclosure } from "../hook/compliance.js";
+import { defectMatch, subjectFromText, hostsFor, ROOM_FAMILY, copyTexts } from "./captions.js";
 
 const SCHOOL_ADJECTIVES =
   /\b(top[- ]?rated|best|excellent|great|good|award[- ]?winning|blue[- ]?ribbon|highly[- ]?rated|desirable|sought[- ]?after)\b/i;
@@ -308,6 +309,51 @@ const PREDICATES = {
   BUDGET: (c) => {
     const total = (c.hooks || []).reduce((s, h) => s + (h.est_cost?.total_usd || 0), 0);
     return total > 3.0 ? `sum of hook est_cost.total_usd = $${total.toFixed(2)}` : null;
+  },
+
+  /* ---- copy rules that read the copy AND the recipe, so a hand edit to either is caught. */
+
+  CAPTION_DEFECT: (c) => {
+    const hits = [];
+    for (const copy of c.copySets || []) {
+      for (const { where, text } of copyTexts(copy)) {
+        const term = defectMatch(text);
+        if (term) hits.push(`reel ${copy.reel_n} ${where}: "${text}" ("${term}")`);
+      }
+    }
+    for (const r of c.recipes || []) {
+      for (const seg of r.segments) {
+        for (const o of seg.overlays) {
+          const text = o.lines.join(" / ");
+          const term = defectMatch(text);
+          if (term) hits.push(`${r.reelId} ${seg.kind}@${seg.tIn}s ${o.kind}: "${text}" ("${term}")`);
+        }
+      }
+    }
+    return hits.length ? [...new Set(hits)].slice(0, 8).join(" | ") : null;
+  },
+
+  CAPTION_SUBJECT_MISMATCH: (c) => {
+    const roomOf = Object.fromEntries((c.allAssets || c.assets || []).map((a) => [a.photo_id, a.room_class]));
+    const hits = [];
+    for (const r of c.recipes || []) {
+      for (const seg of r.segments) {
+        // The plan hosts any layout fact; the hook has its own title card; the CTA is a card.
+        if (["floor_plan", "hook", "cta"].includes(seg.kind)) continue;
+        const room = roomOf[seg.source?.id];
+        const fam = room ? ROOM_FAMILY[room] : null;
+        if (!fam) continue;
+        for (const o of seg.overlays) {
+          if (o.kind !== "caption") continue;
+          // The binder's subject when B6 wrote it; the words when a person edited the recipe.
+          const subject = o.subject ?? subjectFromText(o.lines[0]) ?? subjectFromText(o.lines[1]);
+          if (subject && !hostsFor(subject).includes(fam)) {
+            hits.push(`${r.reelId} "${o.lines.join(" / ")}" is about ${subject} but sits on ${seg.source.id} (${room})`);
+          }
+        }
+      }
+    }
+    return hits.length ? hits.slice(0, 8).join(" | ") : null;
   },
 
   /* ---- export-time rules: need the built hook and the rendered overlays. */

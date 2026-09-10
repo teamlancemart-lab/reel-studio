@@ -17,6 +17,7 @@ import { fitShotsToTier, buildCutMap } from "./fit.js";
 import * as P from "./prompts.js";
 import { reverseConcealPrompts as hookPrompts } from "../hook/prompts.js";
 import { HOOK_WINDOW_S } from "../hook/paid.js";
+import { quarantineDefects, bindCaptions, defectMatch, copyTexts } from "./captions.js";
 
 const FLASH = config.textModel;
 const LITE = config.textLiteModel;
@@ -158,6 +159,12 @@ export async function runB1(jobId, { facts, assets }) {
         temperature: 0.1,
       });
       if (!json) throw new Error("B1 returned unparseable JSON");
+      /* Negative observations are recorded, never marketed. On 2572 Lexington B1 wrote
+         "Water damage is visible in one of the bedrooms" as an ordinary observed item
+         and B6 put it on screen in all three reels. The prompt now asks for a defects
+         list; this makes it true whatever the model does. */
+      const { moved } = quarantineDefects(json);
+      if (moved.length) json.defect_quarantine = moved;
       return json;
     },
     { schema: "ListingTruth", model: FLASH, parents: ["B0"] },
@@ -403,8 +410,10 @@ export async function runB6(
   reelN,
   /* D2 has no B4 and no generated hook, so hookIsGenerated is false and the reels carry
      no altered-image disclosure. D3 flips it per reel from B4.generation_path. */
-  { truth, persona, format, shots, hookIsGenerated = false },
+  { truth, persona, format, shots, assets, hookIsGenerated = false },
 ) {
+  const assetsById = Object.fromEntries((assets || []).map((a) => [a.photo_id, a]));
+  const defectIds = new Set((truth.defects || []).map((d) => d.id));
   /* Every id a claim may legitimately cite. compliance_context belongs here as much as
      facts does: the altered-image disclosure traces to originals_url, which lives
      there, and leaving it out rejected a correct trace. */
@@ -426,7 +435,7 @@ export async function runB6(
         stage: `B6:${reelN}`,
         model: FLASH,
         prompt: P.b6Prompt(
-          { reelN, truth, persona, format, shots, market: truth.market, hookIsGenerated },
+          { reelN, truth, persona, format, shots, assetsById, market: truth.market, hookIsGenerated },
           retryHint,
         ),
         temperature: 0.4,
@@ -435,7 +444,21 @@ export async function runB6(
       json.reel_n = reelN;
 
       const problems = auditClaims(json, validIds, truth.market);
+      /* Defects: not one word of them, and no citation of one. A failure here goes back
+         to the model once with the offending string named, then fails the node. */
+      for (const { where, text } of copyTexts(json)) {
+        const term = defectMatch(text);
+        if (term) problems.push(`${where} "${text}" mentions a property defect ("${term}"); defects are never copy`);
+      }
+      for (const t of json.claims_trace || []) {
+        if (defectIds.has(t.source?.id)) problems.push(`claims_trace "${t.text}" cites defect ${t.source.id}`);
+      }
       if (problems.length) throw new Error(problems.join(" | "));
+
+      /* Room binding is arithmetic over B0, not a request to the model: the prompt
+         already listed each shot's room_class and B6 still captioned a bedroom
+         "Brick Facade". */
+      bindCaptions(json, { truth, shots, assetsById });
       return json;
     },
     { schema: "CopySet", reelN, model: FLASH, parents: ["B1", "B2", "B3", "B5"] },

@@ -134,6 +134,10 @@
           "items": {
             "$ref": "#/$defs/SourceRef"
           }
+        },
+        "subject": {
+          "type": "string",
+          "description": "Room family the card is about (kitchen, bedroom, exterior, whole...). Set by the binder."
         }
       },
       "required": [
@@ -675,6 +679,38 @@
       },
       "meta": {
         "$ref": "#/$defs/NodeMeta"
+      },
+      "defects": {
+        "type": "array",
+        "description": "Condition problems seen in photos or stated on the form. Recorded so they are never marketed: nothing in observed, specials, provable_numbers or any copy may cite them.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "photo_id": {
+              "type": "string"
+            },
+            "term": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "text"
+          ]
+        }
+      },
+      "defect_quarantine": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "What the B1 post-process moved out of observed/specials/provable_numbers, and why."
       }
     },
     "required": [
@@ -1387,6 +1423,69 @@
       },
       "meta": {
         "$ref": "#/$defs/NodeMeta"
+      },
+      "caption_binding": {
+        "type": "array",
+        "description": "Where each proof card and fact caption landed and why: kept on a matching room, moved to one, or dropped with a reason. Written by code, not the model.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "card": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "subject": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "subject_via": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "from_shot": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "from_room": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "to_shot": {
+              "type": "string"
+            },
+            "to_room": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "kept",
+                "moved",
+                "dropped"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "card",
+            "action"
+          ]
+        }
       }
     },
     "required": [

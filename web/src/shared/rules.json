@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "updated": "2026-09-10",
   "price_bands": {
     "in": {
@@ -1000,6 +1000,29 @@
       "near metro"
     ]
   },
+  "defect_terms": {
+    "note": "Condition problems are recorded (B1 defects, with the photo) and NEVER marketed. Word-boundary, case-insensitive regex fragments. B1 quarantines observations that match, B6 rejects copy that matches, CAPTION_DEFECT BLOCKs export. 'water' is deliberately blunt: 'waterfront' is one word and does not match, 'water view' does.",
+    "patterns": [
+      "damag\\w*",
+      "defects?",
+      "defective",
+      "repairs?",
+      "repaired",
+      "issues?",
+      "water",
+      "mou?ld\\w*",
+      "mildew",
+      "crack\\w*",
+      "broken",
+      "leak(s|ing|ed|y)?",
+      "rot(ten|ting)?",
+      "stain(s|ed)?",
+      "peeling",
+      "needs? work",
+      "fixer( upper)?",
+      "as[- ]is"
+    ]
+  },
   "qa_reject_list": [
     "people_added_or_removed",
     "vehicles_added_or_removed",
@@ -1209,6 +1232,20 @@
       "level": "BLOCK",
       "when": "any card bounding box outside safe_zone_9x16",
       "message": "Text inside the Reels UI overlay zone."
+    },
+    {
+      "id": "CAPTION_DEFECT",
+      "stage": "pre_export",
+      "level": "BLOCK",
+      "when": "any card, caption, CTA line, post_caption or hashtag matches defect_terms",
+      "message": "Property defects, damage and repairs never appear in reel copy."
+    },
+    {
+      "id": "CAPTION_SUBJECT_MISMATCH",
+      "stage": "pre_export",
+      "level": "BLOCK",
+      "when": "a caption about a room sits on a shot whose room_class is a different room, or a whole-property fact sits on a single room",
+      "message": "A caption must sit on a shot of the room it describes."
     }
   ],
   "job_defaults": {
