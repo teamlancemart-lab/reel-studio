@@ -33,6 +33,14 @@ export interface Facts {
   phone: string;
   brokerage: string;
   captions: string;
+  /** Service-only facts: the brain and the compliance lines need them. */
+  region: string;
+  agentHandle: string;
+  mlsNumber: string;
+  yearBuilt: string;
+  featuresText: string;
+  /** Required before any generated media ships (US_ALTERED_NO_DISCLOSURE, INTERIOR_ALTERED). */
+  originalsUrl: string;
 }
 
 export const EMPTY_FACTS: Facts = {
@@ -52,6 +60,12 @@ export const EMPTY_FACTS: Facts = {
   phone: "",
   brokerage: "",
   captions: "",
+  region: "",
+  agentHandle: "",
+  mlsNumber: "",
+  yearBuilt: "",
+  featuresText: "",
+  originalsUrl: "",
 };
 
 function specLine(f: Facts) {

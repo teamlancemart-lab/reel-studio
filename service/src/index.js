@@ -37,7 +37,7 @@ import {
   jobDir,
   emit,
 } from "./store.js";
-import { runJobDetached } from "./pipeline.js";
+import { runJobDetached, resumeJob } from "./pipeline.js";
 import { ledgerTotals } from "./ledger.js";
 import { ffmpegVersion, pythonStatus, fontStatus } from "./lib/media.js";
 import { vertexStatus } from "./lib/vertex.js";
@@ -49,6 +49,7 @@ import { preGenerationCheck } from "./brain/preflight.js";
 import { buildHook } from "./hook/index.js";
 import { exportReel } from "./render/export.js";
 import { buildGlides, selectHeroInteriors, glideEstimate } from "./interiors/glide.js";
+import { jobFlags, parseOptions, resolveOptions } from "./jobOptions.js";
 
 /** Which schema an edited payload is validated against, by node. */
 const SCHEMA_BY_NODE = {
@@ -137,6 +138,15 @@ app.post("/jobs", upload.array(config.uploadFieldName, config.maxPhotos), (req, 
     }
   }
 
+  /* Run controls from the dashboard. Validated before anything is written: a malformed
+     toggle is a 400, never a silent default that might turn into a paid run. */
+  let options;
+  try {
+    options = parseOptions(req.body?.options ? JSON.parse(req.body.options) : {});
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+
   /* Bucket assignment. The client sends its own split (exterior / interior /
      floor_plan) because the user can drag photos between buckets; if it does not,
      everything lands in "unsorted" and B0 classifies it in D2. Never guessed silently. */
@@ -151,6 +161,7 @@ app.post("/jobs", upload.array(config.uploadFieldName, config.maxPhotos), (req, 
 
   const jobId = newJobId();
   const job = createJob(jobId, facts);
+  job.options = { requested: options, effective: resolveOptions(options) };
 
   files.forEach((file, i) => {
     const ext = path.extname(file.originalname) || ".jpg";
@@ -174,6 +185,7 @@ app.post("/jobs", upload.array(config.uploadFieldName, config.maxPhotos), (req, 
 
   res.status(202).json({
     jobId,
+    options: job.options,
     photoCount: job.photos.length,
     events: `/jobs/${jobId}/events`,
     job: `/jobs/${jobId}`,
@@ -193,6 +205,11 @@ app.get("/jobs", (_req, res) => {
         progress: j.progress,
         photoCount: j.photos.length,
         createdAt: j.createdAt,
+        address: [j.facts?.address_line, j.facts?.city].filter(Boolean).join(", ") || null,
+        options: j.options?.effective ?? null,
+        duplicateOf: j.duplicate_of ?? null,
+        reels: Object.keys(j.reels || {}).length,
+        failureReason: j.failureReason ?? null,
         ledger: ledgerTotals(j.ledger),
       })),
   );
@@ -294,9 +311,7 @@ app.post("/jobs/:id/resume", (req, res) => {
   const job = readJob(req.params.id);
   if (!job) return res.status(404).json({ error: "no such job" });
   res.status(202).json({ ok: true, resuming: req.params.id });
-  runBrain(req.params.id, { resume: true }).catch(() => {
-    /* runBrain records its own failure on the job */
-  });
+  resumeJob(req.params.id);
 });
 
 /** Rebuild the recipes from the stored nodes. Pure function, zero cost. */
@@ -316,6 +331,106 @@ app.get("/jobs/:id/recipes", (req, res) => {
     notes: job.recipeNotes ?? [],
     problems: job.recipeProblems ?? [],
   });
+});
+
+/* ------------------------------------------------------ dashboard: summary */
+
+/**
+ * The live dashboard's view of a job: everything it draws, none of the event log or the
+ * node payloads that make /jobs/:id heavy. Polled on every SSE event.
+ */
+app.get("/jobs/:id/summary", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  const flags = jobFlags(job);
+  res.json({
+    jobId: job.jobId,
+    status: job.status,
+    stage: job.stage,
+    progress: job.progress,
+    createdAt: job.createdAt,
+    completedAt: job.completedAt,
+    failureReason: job.failureReason,
+    duplicateOf: job.duplicate_of ?? null,
+    reusedBrain: job.reused_brain ?? [],
+    facts: job.facts,
+    photoCount: job.photos.length,
+    photos: job.photos.map((p) => ({ id: p.id, name: p.storedName, excluded_reason: p.excluded_reason })),
+    options: job.options ?? null,
+    flags,
+    nodes: Object.values(job.nodes).map((n) => ({
+      key: n.key,
+      node: n.node,
+      reelN: n.reelN ?? null,
+      label: NODE_LABEL[n.node],
+      status: n.status,
+      version: n.version,
+      model: n.model,
+      costInr: n.cost_inr,
+      elapsedMs: n.elapsed_ms,
+      attempts: n.attempts ?? 1,
+      locked: n.locked,
+      stale: n.stale,
+      failureReason: n.failure_reason,
+      copiedFrom: n.copied_from ?? null,
+      concept: n.node === "B4" ? n.payload?.concept_id : undefined,
+    })),
+    hooks: job.hooks ?? {},
+    hookHistory: job.hook_history ?? {},
+    interiorClips: job.interior_clips ?? {},
+    reels: Object.fromEntries(Object.entries(job.reels || {}).map(([n, r]) => [n, r.versions])),
+    recipes: (job.recipes || []).map((r) => ({ reelId: r.reelId, tier: r.tier, durationS: r.durationS })),
+    runIssues: job.run_issues ?? [],
+    ledger: job.ledger,
+    ledgerTotals: ledgerTotals(job.ledger),
+    guards: {
+      warnUsd: costModel.guards.warn_above_usd_per_listing,
+      blockUsd: costModel.guards.block_above_usd_per_listing,
+      usdInr: costModel.fx.usd_inr,
+    },
+  });
+});
+
+/**
+ * Same photos, different run controls. No re-upload: the photos are copied on the
+ * service. By default the brain is reused too — B0 through B7 except the hook plans are
+ * copied and LOCKED, so a 2.5d vs veo comparison differs in the toggles and nothing else,
+ * and the duplicate does not pay for the brain twice. B4 and B8 run again, because they
+ * depend on the options.
+ */
+app.post("/jobs/:id/duplicate", (req, res) => {
+  const src = readJob(req.params.id);
+  if (!src) return res.status(404).json({ error: "no such job" });
+  let options;
+  try {
+    options = parseOptions(req.body?.options ?? src.options?.requested ?? {});
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+  const reuseBrain = req.body?.reuseBrain !== false;
+
+  const jobId = newJobId();
+  const job = createJob(jobId, src.facts);
+  job.options = { requested: options, effective: resolveOptions(options) };
+  job.duplicate_of = src.jobId;
+  for (const photo of src.photos) {
+    fs.copyFileSync(path.join(photosDir(src.jobId), photo.storedName), path.join(photosDir(jobId), photo.storedName));
+    job.photos.push({ ...photo });
+  }
+  if (reuseBrain) {
+    const keep = Object.keys(src.nodes).filter((k) => {
+      const n = src.nodes[k];
+      return n.status === "ok" && !["B4", "B8"].includes(n.node);
+    });
+    for (const k of keep) {
+      job.nodes[k] = { ...structuredClone(src.nodes[k]), locked: true, stale: false, copied_from: src.jobId };
+    }
+    job.dedupe = structuredClone(src.dedupe ?? null);
+    job.reused_brain = keep;
+  }
+  writeJob(job);
+  res.status(202).json({ jobId, duplicateOf: src.jobId, reusedBrain: job.reused_brain ?? [], options: job.options });
+  runJobDetached(jobId);
 });
 
 /* ------------------------------------------------------------ D3: hooks */
@@ -340,7 +455,7 @@ app.get("/jobs/:id/hooks", (req, res) => {
       versions: job.reels?.[r.reel_n]?.versions ?? [],
     };
   });
-  res.json({ jobId: job.jobId, reels, ledger: ledgerTotals(job.ledger), generativeEnabled: config.generativeEnabled });
+  res.json({ jobId: job.jobId, reels, ledger: ledgerTotals(job.ledger), generativeEnabled: jobFlags(job).generative });
 });
 
 app.post("/jobs/:id/hooks/:reelN/generate", (req, res) => {
@@ -404,8 +519,8 @@ app.get("/jobs/:id/interiors", (req, res) => {
   const heroes = selectHeroInteriors(job);
   const pending = heroes.filter((h) => !job.interior_clips?.[h.photo_id]);
   res.json({
-    interiorMotion: config.interiorMotion,
-    generativeEnabled: config.generativeEnabled,
+    interiorMotion: jobFlags(job).interiorMotion,
+    generativeEnabled: jobFlags(job).generative,
     generating: glideRuns.has(job.jobId),
     heroes,
     estimate: glideEstimate(pending.length, costModel),
@@ -416,8 +531,9 @@ app.get("/jobs/:id/interiors", (req, res) => {
 app.post("/jobs/:id/interiors/generate", (req, res) => {
   const job = readJob(req.params.id);
   if (!job) return res.status(404).json({ error: "no such job" });
-  if (config.interiorMotion !== "veo") return res.status(409).json({ error: "INTERIOR_MOTION is not 'veo'; interiors stay 2.5d" });
-  if (!config.generativeEnabled) return res.status(409).json({ error: "GENERATIVE_ENABLED is not 'true'" });
+  const flags = jobFlags(job);
+  if (flags.interiorMotion !== "veo") return res.status(409).json({ error: "this job runs interiors in 2.5d" });
+  if (!flags.generative) return res.status(409).json({ error: "generative is off for this job" });
   if (glideRuns.has(job.jobId)) return res.status(409).json({ error: "glides already generating for this job" });
   glideRuns.add(job.jobId);
   res.status(202).json({ ok: true, heroes: selectHeroInteriors(job) });
@@ -488,6 +604,8 @@ app.get("/jobs/:id/file/:name", (req, res) => {
     (p) => p.startsWith(root + path.sep) && fs.existsSync(p),
   );
   if (!hit) return res.status(404).json({ error: "no such file" });
+  // A cross-origin <a download> is ignored by browsers; the header is what downloads.
+  if (req.query.download) res.attachment(name);
 
   res.sendFile(hit);
 });

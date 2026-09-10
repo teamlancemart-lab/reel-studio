@@ -35,6 +35,7 @@ import {
 } from "./nodes.js";
 import { runB8 } from "./preflight.js";
 import { buildRecipes, validateRecipe } from "./recipe.js";
+import { jobFlags } from "../jobOptions.js";
 
 export function loadTracks() {
   const p = path.join(SERVICE_ROOT, "assets", "music", "tracks.json");
@@ -49,7 +50,7 @@ export function loadTracks() {
  * B1, B2, B3, B5 and four other nodes. Re-running all of that to retry one call is
  * money set on fire, and the graph already knows which nodes are good.
  */
-export async function runBrain(jobId, { resume = false } = {}) {
+export async function runBrain(jobId, { resume = false, finish = true } = {}) {
   const tracks = loadTracks();
 
   const stored = (key) => {
@@ -114,8 +115,12 @@ export async function runBrain(jobId, { resume = false } = {}) {
 
   /* ---- B4, per reel. One paid hook per job at most (cost-model presets.one_paid_hook). */
   const hooks = [];
+  const flags = jobFlags(readJob(jobId));
   for (const entry of formats.reels) {
     const reelN = entry.reel_n;
+    /* Reel 1 carries the run controls' concept. A paid hook is only allowed on a job
+       run with generative on, and at most one per job. */
+    const forcedConcept = reelN === 1 ? flags.hookConcept : null;
     setStage(jobId, `brain:B4:${reelN}`, 0.47 + 0.02 * reelN);
     hooks.push(
       await reuse(`B4:${reelN}`, () =>
@@ -124,7 +129,8 @@ export async function runBrain(jobId, { resume = false } = {}) {
           persona,
           assets,
           alreadyPicked: hooks.map((h) => h.concept_id),
-          paidAllowed: !hooks.some((h) => h.generation_path !== "free_2p5d"),
+          paidAllowed: flags.paidHook && !hooks.some((h) => h.generation_path !== "free_2p5d"),
+          forcedConcept,
         }),
       ),
     );
@@ -218,7 +224,7 @@ export async function runBrain(jobId, { resume = false } = {}) {
     return { blocked: true, preflight };
   }
 
-  complete(jobId);
+  if (finish) complete(jobId);
   return { blocked: false, preflight, recipes };
 }
 
@@ -268,12 +274,14 @@ export async function regenerateNode(jobId, nodeKey) {
         .filter((k) => k.startsWith("B4:") && k !== nodeKey)
         .map((k) => job.nodes[k].payload)
         .filter(Boolean);
+      const flags = jobFlags(job);
       return runB4(jobId, reelN, {
         truth: payloadOf("B1"),
         persona: payloadOf("B2"),
         assets: survivors(),
         alreadyPicked: others.map((h) => h.concept_id),
-        paidAllowed: !others.some((h) => h.generation_path !== "free_2p5d"),
+        paidAllowed: flags.paidHook && !others.some((h) => h.generation_path !== "free_2p5d"),
+        forcedConcept: reelN === 1 ? flags.hookConcept : null,
       });
     }
     case "B5":

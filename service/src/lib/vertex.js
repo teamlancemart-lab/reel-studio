@@ -12,7 +12,9 @@
  */
 import { GoogleAuth } from "google-auth-library";
 import { config } from "../config.js";
-import { addLedgerRow } from "../store.js";
+import { addLedgerRow, readJob } from "../store.js";
+import { jobFlags, budgetCheck } from "../jobOptions.js";
+import { priceVideo as _priceVideo } from "../ledger.js";
 import { makeRow, priceTokens, priceImage, priceVideo } from "../ledger.js";
 
 /* ------------------------------------------------------------------ auth */
@@ -334,6 +336,16 @@ export async function submitVideo({
     throw new Error(
       "GENERATIVE_ENABLED is not 'true'. Paid video is gated until Stage 6.",
     );
+  }
+  /* The per-job toggle, checked here too: every Veo call in the service goes through this
+     function, so no code path can spend on a job whose run controls said no. */
+  if (jobId) {
+    const job = readJob(jobId);
+    if (job && !jobFlags(job).generative) {
+      throw new Error(`job ${jobId} was run with generative off; paid video refused`);
+    }
+    const budget = job ? budgetCheck(job, _priceVideo(model, durationSeconds).usd) : { ok: true };
+    if (!budget.ok) throw new Error(budget.reason);
   }
   if (lastFrame && durationSeconds !== 8) {
     throw new Error(

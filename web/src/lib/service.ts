@@ -6,6 +6,7 @@
  */
 import type { StudioPhoto } from "./photos";
 import type { Facts } from "./stub-recipe";
+import { toServiceFacts } from "./facts";
 
 export const SERVICE_URL = (
   process.env.NEXT_PUBLIC_SERVICE_URL || "http://localhost:8080"
@@ -21,6 +22,7 @@ export interface HealthReport {
   python: { ok: boolean; python?: string; pillow?: string; error?: string };
   fonts: { ok: boolean; present: string[]; missing: string[] };
   vertex: { generativeEnabled: boolean; credentialsConfigured: boolean };
+  interiorMotion?: "2.5d" | "veo";
 }
 
 export async function getHealth(signal?: AbortSignal): Promise<HealthReport> {
@@ -41,15 +43,16 @@ export interface JobEvent {
   [k: string]: unknown;
 }
 
-export async function submitJob(photos: StudioPhoto[], facts: Facts) {
+export async function submitJob(photos: StudioPhoto[], facts: Facts, options?: Record<string, unknown>) {
   const form = new FormData();
   const buckets: Record<string, string> = {};
   for (const p of photos) {
     form.append("photos", p.blob, p.filename);
     buckets[p.filename] = p.bucket;
   }
-  form.append("facts", JSON.stringify(facts));
+  form.append("facts", JSON.stringify(toServiceFacts(facts)));
   form.append("buckets", JSON.stringify(buckets));
+  if (options) form.append("options", JSON.stringify(options));
 
   const res = await fetch(`${SERVICE_URL}/jobs`, { method: "POST", body: form });
   const body = await res.json();
@@ -80,6 +83,14 @@ export function streamJob(
     "artefact",
     "excluded",
     "node",
+    "dedupe",
+    "recipes",
+    "preflight",
+    "hook",
+    "interior",
+    "render",
+    "run_issue",
+    "ledger_total",
     "completed",
     "failed",
   ]) {

@@ -16,6 +16,7 @@ import { readJob, writeJob, emit, jobDir, outDir, photosDir } from "../store.js"
 import { cutAndLock, HOOK_WINDOW_S } from "../hook/paid.js";
 import { hookDisclosure, motionDisclosure } from "../hook/compliance.js";
 import { selectHeroInteriors } from "../interiors/glide.js";
+import { jobFlags } from "../jobOptions.js";
 import { evaluateRules } from "../brain/preflight.js";
 import { renderReel } from "./render.js";
 
@@ -133,7 +134,8 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
      triggers new clip generation breaks the build-once asset pool. */
   const glides = [];
   const glidesMissing = [];
-  if (config.interiorMotion === "veo") {
+  const flags = jobFlags(job);
+  if (flags.interiorMotion === "veo") {
     const clips = job.interior_clips || {};
     for (const seg of recipe.segments) {
       if (seg.kind !== "interior") continue;
@@ -209,7 +211,7 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
       overlayBoxes: rendered.overlayBoxes,
       recipes: [recipe],
       allAssets: job.nodes.B0?.payload?.assets || [],
-      interiorMotion: config.interiorMotion,
+      interiorMotion: flags.interiorMotion,
       interiorClips: job.interior_clips || {},
     },
     "pre_export",
@@ -253,7 +255,7 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
     disclosure: disclosure
       ? { label: disclosure.label ?? null, motion_label: disclosure.motionLabel ?? null, cta_line: disclosure.ctaLine }
       : null,
-    interior_motion: config.interiorMotion,
+    interior_motion: flags.interiorMotion,
     glides,
     glides_missing: glidesMissing,
     files: {

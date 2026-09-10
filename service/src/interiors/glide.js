@@ -21,6 +21,8 @@ import { emit, readJob, writeJob, jobDir, photosDir, outDir } from "../store.js"
 import { crop916, videoDuration, sh } from "../hook/crop.js";
 import { b64 } from "../hook/paid.js";
 import { qaInterior } from "./qa.js";
+import { jobFlags, budgetCheck } from "../jobOptions.js";
+import { costModel } from "../config.js";
 
 const SPEC = rules.interior_motion;
 
@@ -32,7 +34,7 @@ const scoreOf = (a) => (a.scores?.sharpness ?? 0) * (a.scores?.exposure ?? 0) * 
  * The hero interiors: for each rules.json interior_motion.hero_categories entry, the
  * best-scoring photo of that class that the reels actually use. Pure.
  */
-export function selectHeroInteriors(job, max = SPEC.max_hero_interiors) {
+export function selectHeroInteriors(job, max = jobFlags(job).heroRooms ?? SPEC.max_hero_interiors) {
   const assets = job.nodes.B0?.payload?.assets || [];
   const excluded = new Set((job.dedupe?.dropped || []).map((d) => d.photo_id));
   const used = new Set(
@@ -75,15 +77,16 @@ export function glideEstimate(count, costModel) {
  * failure with no clip and no spend (a Vertex 429), so it gets its one attempt.
  */
 export async function buildGlides(jobId, { photoIds = null } = {}) {
-  if (config.interiorMotion !== "veo") {
-    throw Object.assign(new Error("INTERIOR_MOTION is not 'veo'; interiors stay 2.5d"), { status: 409 });
-  }
-  if (!config.generativeEnabled) {
-    throw Object.assign(new Error("GENERATIVE_ENABLED is not 'true'"), { status: 409 });
-  }
   const job = readJob(jobId);
+  const flags = jobFlags(job);
+  if (flags.interiorMotion !== "veo") {
+    throw Object.assign(new Error("this job runs interiors in 2.5d; no glides"), { status: 409 });
+  }
+  if (!config.generativeEnabled || !flags.generative) {
+    throw Object.assign(new Error("generative is off for this job"), { status: 409 });
+  }
   const heroes = selectHeroInteriors(job).filter((h) => !photoIds || photoIds.includes(h.photo_id));
-  const final = (rec) => rec && rec.status !== "failed";
+  const final = (rec) => rec && !["failed", "skipped"].includes(rec.status);
   const todo = heroes.filter((h) => !final(job.interior_clips?.[h.photo_id]));
   for (const h of heroes.filter((x) => final(job.interior_clips?.[x.photo_id]))) {
     emit(jobId, "interior", { photoId: h.photo_id, step: "reused", status: job.interior_clips[h.photo_id].status });
@@ -91,7 +94,13 @@ export async function buildGlides(jobId, { photoIds = null } = {}) {
   /* One at a time. Three concurrent submits hit Vertex's per-base-model quota for
      long-running requests (429) on 2026-09-10; the third clip never ran. */
   const out = [];
+  const perClipUsd = glideEstimate(1, costModel).total_usd;
   for (const h of todo) {
+    const budget = budgetCheck(readJob(jobId), perClipUsd);
+    if (!budget.ok) {
+      out.push(saveGlide(jobId, h.photo_id, { ...h, status: "skipped", reason: budget.reason, fallback: "2.5d" }));
+      continue;
+    }
     out.push(
       await buildOne(jobId, h).catch((err) =>
         saveGlide(jobId, h.photo_id, { ...h, status: "failed", reason: err.message.slice(0, 400), fallback: "2.5d" }),

@@ -1,21 +1,26 @@
 "use client";
 
 /**
- * Listing Reel Studio, D1.
+ * Listing Reel Studio.
  *
- * Upload -> facts -> canvas preview, all in the browser. The recipe is a stub until D2
- * replaces it with the brain's output; nothing else on this page changes when it does,
- * because the canvas only ever knew about ReelRecipe.
+ * The whole job runs from this page: drop photos, fill the facts, set the run controls,
+ * Generate, and watch the pipeline produce three reels over SSE. No terminal step.
+ * The canvas preview still interprets the same ReelRecipe the exporter renders.
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Inter, Playfair_Display } from "next/font/google";
 import CanvasPreview from "@/components/CanvasPreview";
 import FactsForm from "@/components/FactsForm";
-import ServicePanel from "@/components/ServicePanel";
 import UploadPanel from "@/components/UploadPanel";
 import BrainPanel from "@/components/BrainPanel";
 import HookPanel from "@/components/HookPanel";
+import RunControls from "@/components/RunControls";
+import JobView from "@/components/JobView";
+import JobHistory from "@/components/JobHistory";
+import { submitJob } from "@/lib/service";
+import { DEFAULT_OPTIONS, toRequestOptions, type RunOptions } from "@/lib/estimate";
+import { MIN_PHOTOS } from "@/lib/photos";
 import { absolutiseRecipe, getRecipes } from "@/lib/nodes";
 import type { Bucket, StudioPhoto } from "@/lib/photos";
 import { EMPTY_FACTS, buildRecipeFromStudio, imageBank, type Facts } from "@/lib/stub-recipe";
@@ -43,7 +48,12 @@ function Studio() {
      useSearchParams rather than window.location: reading location during render made
      the server and client trees disagree and React threw a hydration mismatch. */
   const params = useSearchParams();
+  const router = useRouter();
   const [jobId, setJobId] = useState<string | null>(params.get("job"));
+  const [options, setOptions] = useState<RunOptions>(DEFAULT_OPTIONS);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [historyKey, setHistoryKey] = useState(0);
   const [realRecipes, setRealRecipes] = useState<ReelRecipe[]>([]);
   const [reelIndex, setReelIndex] = useState(0);
   const [brainImages, setBrainImages] = useState<Map<string, HTMLImageElement>>(new Map());
@@ -122,6 +132,39 @@ function Studio() {
     [],
   );
 
+  const openJob = useCallback(
+    (id: string) => {
+      setJobId(id);
+      setRealRecipes([]);
+      router.replace(`?job=${encodeURIComponent(id)}`, { scroll: false });
+    },
+    [router],
+  );
+
+  const generatesMedia = options.paidHook || options.interiorMotion === "veo";
+  const disabledReason =
+    photos.length < MIN_PHOTOS
+      ? `Add at least ${MIN_PHOTOS} photos (${photos.length} so far).`
+      : !facts.addressLine.trim()
+        ? "Fill in the address in Listing facts."
+        : generatesMedia && !facts.originalsUrl.trim()
+          ? "A paid hook or Veo glides needs an Originals URL: the on-screen disclosure links to it."
+          : null;
+
+  const generate = async () => {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const { jobId: id } = await submitJob(photos, facts, toRequestOptions(options));
+      openJob(id);
+      setHistoryKey((k) => k + 1);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "upload failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const move = (id: string, bucket: Bucket) =>
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, bucket } : p)));
   const remove = (id: string) =>
@@ -137,7 +180,8 @@ function Studio() {
           <div>
             <h1 className="text-sm font-semibold">Listing Reel Studio</h1>
             <p className="text-[11px] text-neutral-500">
-              D3 hook & export · rules v{RULES_VERSION} · cost-model v{COST_MODEL_VERSION}
+              rules v{RULES_VERSION} · cost-model v{COST_MODEL_VERSION}
+              {jobId ? ` · job ${jobId.slice(0, 8)}` : ""}
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -167,7 +211,7 @@ function Studio() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1400px] gap-4 px-4 py-5 lg:grid-cols-[380px_minmax(0,1fr)_360px]">
+      <main className="mx-auto grid max-w-[1500px] gap-4 px-4 py-5 lg:grid-cols-[360px_minmax(0,1fr)_340px]">
         <div className="space-y-4">
           <UploadPanel
             photos={photos}
@@ -175,38 +219,81 @@ function Studio() {
             onMove={move}
             onRemove={remove}
           />
-          <ServicePanel photos={photos} facts={facts} onJob={setJobId} />
-          {jobId && (
-            <BrainPanel
-              jobId={jobId}
-              onChanged={() => {
-                void loadRecipes(jobId);
-              }}
-            />
+          <RunControls
+            options={options}
+            onChange={setOptions}
+            photoCount={photos.length}
+            onGenerate={() => void generate()}
+            generating={submitting}
+            disabledReason={disabledReason}
+          />
+          {submitError && (
+            <p className="rounded-md border border-rose-900/60 bg-rose-950/30 p-2 text-[11px] text-rose-300">{submitError}</p>
           )}
-          {jobId && <HookPanel jobId={jobId} />}
         </div>
 
-        <CanvasPreview
-          recipe={recipe}
-          images={images}
-          aspect={aspect}
-          onAspectChange={setAspect}
-          fonts={fonts}
-          problems={problems}
-          source={usingReal ? "brain" : "stub"}
-          reels={realRecipes}
-          reelIndex={reelIndex}
-          onReelChange={setReelIndex}
-        />
+        <div className="min-w-0 space-y-4">
+          {jobId ? (
+            <>
+              <JobView
+                key={jobId}
+                jobId={jobId}
+                onFinished={() => {
+                  void loadRecipes(jobId);
+                  setHistoryKey((k) => k + 1);
+                }}
+              />
+              <details className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+                <summary className="cursor-pointer text-[12px] text-neutral-400">Recipe preview (canvas, instant)</summary>
+                <div className="mt-3">
+                  <CanvasPreview
+                    recipe={recipe}
+                    images={images}
+                    aspect={aspect}
+                    onAspectChange={setAspect}
+                    fonts={fonts}
+                    problems={problems}
+                    source={usingReal ? "brain" : "stub"}
+                    reels={realRecipes}
+                    reelIndex={reelIndex}
+                    onReelChange={setReelIndex}
+                  />
+                </div>
+              </details>
+              <details className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+                <summary className="cursor-pointer text-[12px] text-neutral-400">Advanced: node cards and hook controls</summary>
+                <div className="mt-3 grid gap-4 xl:grid-cols-2">
+                  <BrainPanel jobId={jobId} onChanged={() => void loadRecipes(jobId)} />
+                  <HookPanel jobId={jobId} />
+                </div>
+              </details>
+            </>
+          ) : (
+            <CanvasPreview
+              recipe={recipe}
+              images={images}
+              aspect={aspect}
+              onAspectChange={setAspect}
+              fonts={fonts}
+              problems={problems}
+              source={usingReal ? "brain" : "stub"}
+              reels={realRecipes}
+              reelIndex={reelIndex}
+              onReelChange={setReelIndex}
+            />
+          )}
+        </div>
 
-        <FactsForm facts={facts} onChange={setFacts} />
+        <div className="space-y-4">
+          <FactsForm facts={facts} onChange={setFacts} />
+          <JobHistory currentJobId={jobId} options={options} onOpen={openJob} refreshKey={historyKey} />
+        </div>
       </main>
 
       <footer className="mx-auto max-w-[1400px] px-4 pb-10 text-[11px] text-neutral-600">
         <p className={playfair.className}>
-          Interiors are never AI-altered. Every generated hook ends on the untouched hero
-          photo. Paid video stays gated until Stage 6.
+          Every generated hook ends on the untouched hero photo. Interiors are real photos unless a
+          run turns on Veo glides, and every glide carries an on-screen AI label.
         </p>
       </footer>
     </div>

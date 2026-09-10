@@ -5,7 +5,9 @@
  * ListingTruth and B6 rejects any card carrying a number that is not in here.
  * Typing in this form repaints the canvas immediately.
  */
+import { useState } from "react";
 import type { Facts } from "@/lib/stub-recipe";
+import { fromServiceFacts } from "@/lib/facts";
 
 interface Props {
   facts: Facts;
@@ -77,13 +79,42 @@ export default function FactsForm({ facts, onChange }: Props) {
   const set = <K extends keyof Facts>(key: K, value: Facts[K]) =>
     onChange({ ...facts, [key]: value });
 
+  const [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+
   return (
     <section className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
       <h2 className="text-sm font-semibold">Listing facts</h2>
       <p className="mb-3 text-[11px] text-neutral-500">
-        Everything on screen must trace back to a fact here. B1 makes this ListingTruth
-        in D2.
+        Everything on screen must trace back to a fact here. B1 makes this ListingTruth.
       </p>
+
+      <details className="mb-3 rounded-md border border-neutral-800 p-2">
+        <summary className="cursor-pointer text-[11px] text-neutral-400">Import facts JSON</summary>
+        <textarea
+          value={importText}
+          onChange={(e) => setImportText(e.target.value)}
+          rows={4}
+          aria-label="Facts JSON"
+          placeholder='{"address_line": "…", "price_display": "…"}'
+          className="mt-2 w-full rounded border border-neutral-800 bg-neutral-950 p-2 font-mono text-[10px]"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              onChange(fromServiceFacts(JSON.parse(importText)));
+              setImportError(null);
+            } catch (e) {
+              setImportError(e instanceof Error ? e.message : "not JSON");
+            }
+          }}
+          className="mt-1 rounded border border-neutral-700 px-2 py-0.5 text-[11px]"
+        >
+          Apply
+        </button>
+        {importError && <p className="mt-1 text-[10px] text-rose-300">{importError}</p>}
+      </details>
 
       <div className="space-y-2.5">
         <div className="grid grid-cols-2 gap-2.5">
@@ -210,6 +241,28 @@ export default function FactsForm({ facts, onChange }: Props) {
           value={facts.brokerage}
           onChange={(v) => set("brokerage", v)}
           placeholder="Brokerage"
+        />
+        <div className="grid grid-cols-2 gap-2.5">
+          <Field label="Region / state" value={facts.region} onChange={(v) => set("region", v)} placeholder="PA" />
+          <Field label="Year built" value={facts.yearBuilt} onChange={(v) => set("yearBuilt", v)} placeholder="1920" />
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <Field label="Agent handle" value={facts.agentHandle} onChange={(v) => set("agentHandle", v)} placeholder="@handle" />
+          <Field label="MLS number" value={facts.mlsNumber} onChange={(v) => set("mlsNumber", v)} placeholder="PADA2039114" />
+        </div>
+        <Field
+          label="Originals URL"
+          value={facts.originalsUrl}
+          onChange={(v) => set("originalsUrl", v)}
+          placeholder="https://…/originals"
+          hint="Required for a paid hook or Veo glides: the disclosure links the unaltered photos."
+        />
+        <Field
+          label="Features"
+          value={facts.featuresText}
+          onChange={(v) => set("featuresText", v)}
+          placeholder="Two full kitchens, finished basement…"
+          hint="What the listing says about itself. B1 draws specials from here."
         />
         <Field
           label="Room captions"

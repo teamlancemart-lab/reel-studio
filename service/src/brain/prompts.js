@@ -339,7 +339,7 @@ ${j(strings)}${JSON_ONLY}`,
 /* ------------------------------------------------------------------- B4 */
 
 export function b4Prompt(
-  { reelN, truth, persona, assets, alreadyPicked, paidAllowed, market, costModel },
+  { reelN, truth, persona, assets, alreadyPicked, paidAllowed, forcedConcept = null, market, costModel },
   retryHint,
 ) {
   const pool = assets.map((a) => ({
@@ -352,7 +352,7 @@ export function b4Prompt(
   }));
 
   return withRetry(
-    `Select one hook concept for reel ${reelN} from the hook bank, excluding ${j(alreadyPicked)}. Return JSON only.
+    `${forcedConcept ? `The hook concept for reel ${reelN} is FIXED: ${forcedConcept}. Use it as concept_id and fill everything else for it.` : `Select one hook concept for reel ${reelN} from the hook bank, excluding ${j(alreadyPicked)}.`} Return JSON only.
 
 Score each remaining concept: scroll_stop x engine_survival x compliance_fit x asset_fit x novelty.
 - asset_fit is 0 when the concept needs an asset the pool lacks. Each concept's "needs" is a list of requirements where "a|b" means either satisfies it; check it against the room classes actually present in the photo pool.
@@ -371,9 +371,9 @@ Pick the top score and fill:
 - source_photo_id: a photo with hook_candidate true. If none has it, the best exterior_front for an exterior concept, or the best living/kitchen for a room concept. Never a photo with people.
 - clip_prompt: one sentence describing the motion (the code replaces it with the verified prompt for paid paths)
 - fallback_concept: the next best concept id whose default_path is free_2p5d, so a QA failure costs nothing more.
-The code fills generation_path, engine, prompts, duration, window, truth lock, cost and disclosure from rules.json and cost-model.json; send any value for them.
+The code fills generation_path, engine, duration, window, truth lock, cost and disclosure from rules.json and cost-model.json. Set still_prompt and negative_prompt to the empty string "" — never write a keyword list: a comma list in negative_prompt ran away to the token limit. Keep every other string under 30 words.
 
-hook bank: ${j(rules.hook_bank)}
+hook bank: ${j(paidAllowed || forcedConcept ? rules.hook_bank : rules.hook_bank.filter((h) => h.default_path === "free_2p5d"))}
 market: ${market}
 property_type: ${truth.facts.property_type}
 photo pool: ${j(pool)}${schemaBlock("HookPlan")}${JSON_ONLY}`,
