@@ -20,9 +20,12 @@ import type { Facts } from "@/lib/stub-recipe";
 interface Props {
   photos: StudioPhoto[];
   facts: Facts;
+  /** Fires when a job is accepted, and again when it finishes, so the page can
+      swap the canvas from the stub recipe to the brain's. */
+  onJob?: (jobId: string) => void;
 }
 
-export default function ServicePanel({ photos, facts }: Props) {
+export default function ServicePanel({ photos, facts, onJob }: Props) {
   const [health, setHealth] = useState<HealthReport | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -68,8 +71,15 @@ export default function ServicePanel({ photos, facts }: Props) {
       closeRef.current?.();
       closeRef.current = streamJob(
         id,
-        (e) => setEvents((prev) => [...prev, e]),
-        () => setSending(false),
+        (e) => {
+          setEvents((prev) => [...prev, e]);
+          // The recipes exist the moment buildRecipes runs, before B8.
+          if (e.type === "recipes" || e.type === "completed") onJob?.(id);
+        },
+        () => {
+          setSending(false);
+          onJob?.(id);
+        },
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "upload failed");
