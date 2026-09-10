@@ -21,3 +21,16 @@ service/assets/fonts/*.ttf
 service/assets/fonts/*.txt
 .playwright-mcp/
 frames*.json
+
+# Stage 0 scratch binaries. The .mjs scripts stay: they are the verified hook pipeline.
+stage0/*.png
+stage0/*.jpg
+stage0/*.mp4
+stage0/*.mov
+
+# Licensed listing photo sets used as local test fixtures. Never committed.
+fixtures/
+
+# Next build output
+web/.next/
+web/out/

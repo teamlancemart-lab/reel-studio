@@ -15,12 +15,12 @@ import {
   setStage,
   addExclusion,
   addArtefact,
-  complete,
   fail,
   photosDir,
 } from "./store.js";
 import { probeImage } from "./lib/media.js";
 import { config } from "./config.js";
+import { runBrain } from "./brain/index.js";
 
 /** Read-modify-write one photo on the persisted job. */
 function patchPhoto(jobId, photoId, patch) {
@@ -86,8 +86,10 @@ export async function runJob(jobId) {
       });
     }
 
-    setStage(jobId, "finalising", 0.95);
-    complete(jobId);
+    /* D2: the brain. D1 stopped here with status=completed; the pipeline now runs
+       B0..B8 and builds the recipes. runBrain owns the completed/failed transition
+       because a preflight BLOCK is a failure with a rule id, not a success. */
+    await runBrain(jobId);
   } catch (err) {
     fail(jobId, err.message.slice(0, 500));
   }

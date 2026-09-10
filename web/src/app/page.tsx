@@ -7,34 +7,115 @@
  * replaces it with the brain's output; nothing else on this page changes when it does,
  * because the canvas only ever knew about ReelRecipe.
  */
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Inter, Playfair_Display } from "next/font/google";
 import CanvasPreview from "@/components/CanvasPreview";
 import FactsForm from "@/components/FactsForm";
 import ServicePanel from "@/components/ServicePanel";
 import UploadPanel from "@/components/UploadPanel";
+import BrainPanel from "@/components/BrainPanel";
+import { absolutiseRecipe, getRecipes } from "@/lib/nodes";
 import type { Bucket, StudioPhoto } from "@/lib/photos";
 import { EMPTY_FACTS, buildRecipeFromStudio, imageBank, type Facts } from "@/lib/stub-recipe";
 import { COST_MODEL_VERSION, RULES_VERSION } from "@/lib/rules";
-import type { Aspect, Tier, TypeVoice } from "@/shared/recipe";
+import type { Aspect, ReelRecipe, Tier, TypeVoice } from "@/shared/recipe";
+import { validateRecipe } from "@/shared/recipe";
 
 /* rules.json type_systems names these two faces. The canvas draws with them, so they
    are loaded here rather than only declared in CSS. */
 const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "700"] });
 const playfair = Playfair_Display({ subsets: ["latin"], weight: ["500", "700"] });
 
-export default function StudioPage() {
+function Studio() {
   const [photos, setPhotos] = useState<StudioPhoto[]>([]);
   const [facts, setFacts] = useState<Facts>(EMPTY_FACTS);
   const [aspect, setAspect] = useState<Aspect>("9x16");
   const [tier, setTier] = useState<Tier>("medium");
   const [typeVoice, setTypeVoice] = useState<TypeVoice>("serif_smallcaps");
 
-  const { recipe, problems } = useMemo(
+  /* Once the brain has run, the canvas draws the REAL recipe. Until then it draws the
+     D1 stub. Nothing else on the page changes, because the canvas only ever knew about
+     ReelRecipe. */
+  /* ?job=<id> opens an existing job. A job is a durable thing on the service with a
+     ledger and a node graph; being able to link to one is worth the hook.
+     useSearchParams rather than window.location: reading location during render made
+     the server and client trees disagree and React threw a hydration mismatch. */
+  const params = useSearchParams();
+  const [jobId, setJobId] = useState<string | null>(params.get("job"));
+  const [realRecipes, setRealRecipes] = useState<ReelRecipe[]>([]);
+  const [reelIndex, setReelIndex] = useState(0);
+  const [brainImages, setBrainImages] = useState<Map<string, HTMLImageElement>>(new Map());
+
+  /** Fetch the recipes and decode every photo they reference. */
+  const fetchRecipes = useCallback(async (id: string) => {
+    const { recipes } = await getRecipes(id);
+    const absolute = recipes.map(absolutiseRecipe);
+    const bank = new Map<string, HTMLImageElement>();
+    await Promise.all(
+      absolute.flatMap((r) =>
+        r.segments
+          .filter((s) => s.source.url && !bank.has(s.source.id))
+          .map(
+            (s) =>
+              new Promise<void>((resolve) => {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => {
+                  bank.set(s.source.id, img);
+                  resolve();
+                };
+                img.onerror = () => resolve();
+                img.src = s.source.url!;
+              }),
+          ),
+      ),
+    );
+    return { recipes: absolute, bank };
+  }, []);
+
+  const applyRecipes = useCallback(
+    ({ recipes, bank }: { recipes: ReelRecipe[]; bank: Map<string, HTMLImageElement> }) => {
+      setRealRecipes(recipes);
+      setBrainImages(bank);
+    },
+    [],
+  );
+
+  const loadRecipes = useCallback(
+    (id: string) => fetchRecipes(id).then(applyRecipes),
+    [fetchRecipes, applyRecipes],
+  );
+
+  // Subscribing to an external system: state lands in the promise callback.
+  useEffect(() => {
+    if (!jobId) return;
+    let live = true;
+    fetchRecipes(jobId)
+      .then((result) => {
+        if (live) applyRecipes(result);
+      })
+      .catch(() => {
+        /* the brain panel surfaces the error */
+      });
+    return () => {
+      live = false;
+    };
+  }, [jobId, fetchRecipes, applyRecipes]);
+
+  const stub = useMemo(
     () => buildRecipeFromStudio({ photos, facts, aspect, tier, typeVoice }),
     [photos, facts, aspect, tier, typeVoice],
   );
-  const images = useMemo(() => imageBank(photos), [photos]);
+  const stubImages = useMemo(() => imageBank(photos), [photos]);
+
+  const usingReal = realRecipes.length > 0;
+  const active = usingReal
+    ? { ...realRecipes[Math.min(reelIndex, realRecipes.length - 1)], aspect }
+    : stub.recipe;
+  const recipe = active;
+  const images = usingReal ? brainImages : stubImages;
+  const problems = usingReal ? validateRecipe(active) : stub.problems;
   const fonts = useMemo(
     () => ({ sans: inter.style.fontFamily, serif: playfair.style.fontFamily }),
     [],
@@ -93,7 +174,15 @@ export default function StudioPage() {
             onMove={move}
             onRemove={remove}
           />
-          <ServicePanel photos={photos} facts={facts} />
+          <ServicePanel photos={photos} facts={facts} onJob={setJobId} />
+          {jobId && (
+            <BrainPanel
+              jobId={jobId}
+              onChanged={() => {
+                void loadRecipes(jobId);
+              }}
+            />
+          )}
         </div>
 
         <CanvasPreview
@@ -103,6 +192,10 @@ export default function StudioPage() {
           onAspectChange={setAspect}
           fonts={fonts}
           problems={problems}
+          source={usingReal ? "brain" : "stub"}
+          reels={realRecipes}
+          reelIndex={reelIndex}
+          onReelChange={setReelIndex}
         />
 
         <FactsForm facts={facts} onChange={setFacts} />
@@ -115,5 +208,14 @@ export default function StudioPage() {
         </p>
       </footer>
     </div>
+  );
+}
+
+/* useSearchParams needs a Suspense boundary on a statically prerendered route. */
+export default function StudioPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-neutral-500">Loading studio…</div>}>
+      <Studio />
+    </Suspense>
   );
 }

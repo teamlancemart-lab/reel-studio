@@ -128,12 +128,18 @@ export async function callText({
   systemInstruction = null,
   json = true,
   temperature = 0.2,
+  thinkingBudget = 0,
 }) {
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
       temperature,
       ...(json ? { responseMimeType: "application/json" } : {}),
+      /* Brain nodes are structured extraction against a fixed schema, not reasoning
+         problems. Thinking tokens bill at the OUTPUT rate, so leaving them on roughly
+         doubled the cost of a 29-photo job for no measurable accuracy gain. Pass a
+         budget explicitly to turn it back on for a node that needs it. */
+      ...(thinkingBudget != null ? { thinkingConfig: { thinkingBudget } } : {}),
     },
     ...(systemInstruction
       ? { systemInstruction: { parts: [{ text: systemInstruction }] } }
@@ -178,6 +184,7 @@ export async function callVision({
   images = [],
   json = true,
   temperature = 0.2,
+  thinkingBudget = 0,
 }) {
   const parts = [
     { text: prompt },
@@ -190,6 +197,7 @@ export async function callVision({
     generationConfig: {
       temperature,
       ...(json ? { responseMimeType: "application/json" } : {}),
+      ...(thinkingBudget != null ? { thinkingConfig: { thinkingBudget } } : {}),
     },
   };
 

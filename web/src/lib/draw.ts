@@ -358,7 +358,10 @@ function drawOverlay(
   const titleCase = casedText(lines[0], system.title_case);
   const track = system.title_case === "caps_small" ? W * 0.006 : 0;
 
-  if (overlay.kind === "cta_band" || overlay.system === "search_intent") {
+  /* Only a cta_band gets the centred treatment. "search_intent" is a legitimate
+     title_card_system for a HOOK card ("Homes for sale in Uptown"), and keying on it
+     here rendered reel 2's hook as a gold CTA kicker in the middle of the frame. */
+  if (overlay.kind === "cta_band") {
     // Centred stack. rules.json overlay_style wants the compliance band tall and legible.
     const cx = W / 2;
     let y = H * 0.42;

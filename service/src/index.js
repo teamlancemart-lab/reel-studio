@@ -11,7 +11,6 @@
  * The GCP service-account key lives here and only here. /web never sees it.
  */
 import express from "express";
-import cors from "cors";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -30,16 +29,28 @@ import { runJobDetached } from "./pipeline.js";
 import { ledgerTotals } from "./ledger.js";
 import { ffmpegVersion, pythonStatus, fontStatus } from "./lib/media.js";
 import { vertexStatus } from "./lib/vertex.js";
+import { corsMiddleware } from "./lib/cors.js";
+import { saveNode, setLock } from "./brain/runner.js";
+import { regenerateNode, rebuildRecipes, runBrain } from "./brain/index.js";
+import { rebuildCostInr, staleKeys, NODE_LABEL } from "./brain/graph.js";
+
+/** Which schema an edited payload is validated against, by node. */
+const SCHEMA_BY_NODE = {
+  B0: null, // { assets: PhotoAsset[] }, validated per asset by the node itself
+  B1: "ListingTruth",
+  B2: "TierPersona",
+  B3: "FormatPlan",
+  B4: "HookPlan",
+  B5: "ShotList",
+  B6: "CopySet",
+  B7: "PacingPlan",
+  B8: "PreflightResult",
+};
 
 const app = express();
 app.disable("x-powered-by");
 
-app.use(
-  cors({
-    origin: config.allowedOrigin === "*" ? true : config.allowedOrigin.split(","),
-    methods: ["GET", "POST", "OPTIONS"],
-  }),
-);
+app.use(corsMiddleware(config.allowedOrigin));
 app.use(express.json({ limit: "2mb" }));
 
 const upload = multer({
@@ -174,6 +185,120 @@ app.get("/jobs/:id", (req, res) => {
   const job = readJob(req.params.id);
   if (!job) return res.status(404).json({ error: "no such job" });
   res.json({ ...job, ledgerTotals: ledgerTotals(job.ledger) });
+});
+
+/* ----------------------------------------------------------- brain nodes */
+
+/** The node cards: status, model, cost, elapsed, staleness, rebuild cost. */
+app.get("/jobs/:id/nodes", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+
+  const keys = Object.keys(job.nodes);
+  const cards = keys.map((k) => {
+    const n = job.nodes[k];
+    const wouldStale = staleKeys(k, keys);
+    return {
+      key: k,
+      node: n.node,
+      reelN: n.reelN ?? null,
+      label: NODE_LABEL[n.node],
+      status: n.status,
+      version: n.version,
+      model: n.model,
+      costInr: n.cost_inr,
+      calls: n.calls,
+      elapsedMs: n.elapsed_ms,
+      attempts: n.attempts ?? 1,
+      locked: n.locked,
+      stale: n.stale,
+      failureReason: n.failure_reason,
+      generatedAt: n.generated_at,
+      parentVersions: n.parent_versions,
+      editedBy: n.edited_by ?? null,
+      /* What re-running this node would cost downstream, shown before the click. */
+      wouldStale,
+      rebuildCostInr: rebuildCostInr(wouldStale, { photoCount: job.photos.length }),
+    };
+  });
+
+  res.json({
+    jobId: job.jobId,
+    cards,
+    ledger: ledgerTotals(job.ledger),
+    dedupe: job.dedupe ?? null,
+    recipeNotes: job.recipeNotes ?? [],
+    recipeProblems: job.recipeProblems ?? [],
+  });
+});
+
+app.get("/jobs/:id/nodes/:key", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  const n = job.nodes[req.params.key];
+  if (!n) return res.status(404).json({ error: "no such node" });
+  res.json(n);
+});
+
+/** Save an edited payload. Validates, bumps the version, stales descendants. */
+app.patch("/jobs/:id/nodes/:key", (req, res) => {
+  try {
+    const schema = SCHEMA_BY_NODE[req.params.key.split(":")[0]] || null;
+    const record = saveNode(req.params.id, req.params.key, req.body?.payload, { schema });
+    res.json({ ok: true, node: record });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/** Re-run ONE node. Siblings untouched. */
+app.post("/jobs/:id/nodes/:key/regenerate", async (req, res) => {
+  try {
+    const payload = await regenerateNode(req.params.id, req.params.key);
+    res.json({ ok: true, payload });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/jobs/:id/nodes/:key/lock", (req, res) => {
+  try {
+    res.json({ ok: true, node: setLock(req.params.id, req.params.key, req.body?.locked) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * Resume a failed job. Nodes already stored as ok and not stale are reused, so a
+ * transient network failure late in the graph costs one call, not the whole brain.
+ */
+app.post("/jobs/:id/resume", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  res.status(202).json({ ok: true, resuming: req.params.id });
+  runBrain(req.params.id, { resume: true }).catch(() => {
+    /* runBrain records its own failure on the job */
+  });
+});
+
+/** Rebuild the recipes from the stored nodes. Pure function, zero cost. */
+app.post("/jobs/:id/recipes/rebuild", (req, res) => {
+  try {
+    res.json({ ok: true, ...rebuildRecipes(req.params.id) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/jobs/:id/recipes", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  res.json({
+    recipes: job.recipes ?? [],
+    notes: job.recipeNotes ?? [],
+    problems: job.recipeProblems ?? [],
+  });
 });
 
 /* ------------------------------------------------------------------ SSE */

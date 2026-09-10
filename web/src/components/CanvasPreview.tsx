@@ -19,6 +19,11 @@ interface Props {
   onAspectChange: (a: Aspect) => void;
   fonts: { sans: string; serif: string };
   problems: string[];
+  /** "stub" until the brain has run, then "brain". */
+  source?: "stub" | "brain";
+  reels?: ReelRecipe[];
+  reelIndex?: number;
+  onReelChange?: (i: number) => void;
 }
 
 export default function CanvasPreview({
@@ -28,6 +33,10 @@ export default function CanvasPreview({
   onAspectChange,
   fonts,
   problems,
+  source = "stub",
+  reels = [],
+  reelIndex = 0,
+  onReelChange,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
@@ -144,9 +153,29 @@ export default function CanvasPreview({
       <div className="mb-1 flex items-baseline justify-between">
         <h2 className="text-sm font-semibold">Canvas preview</h2>
         <span className="text-[11px] text-neutral-500">
-          instant · free · driven by the ReelRecipe
+          {source === "brain"
+            ? "real recipe from the brain · instant · free"
+            : "D1 stub recipe · instant · free"}
         </span>
       </div>
+
+      {reels.length > 1 && (
+        <div className="mb-2 inline-flex rounded-lg border border-neutral-800 bg-neutral-950 p-1">
+          {reels.map((r, i) => (
+            <button
+              key={r.reelId}
+              onClick={() => onReelChange?.(i)}
+              className={`rounded-md px-3 py-1 text-xs transition ${
+                i === reelIndex
+                  ? "bg-amber-400 font-semibold text-neutral-900"
+                  : "text-neutral-400 hover:text-neutral-200"
+              }`}
+            >
+              {r.reelId} · {r.tier}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mb-3 inline-flex rounded-lg border border-neutral-800 bg-neutral-950 p-1">
         {(["9x16", "16x9"] as Aspect[]).map((a) => (
