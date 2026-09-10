@@ -275,7 +275,7 @@ export function defaultPaidEligible(concept, truth, assets) {
  * the cost (cost-model.json), the disclosure label (rules.json), the truth lock and
  * the window. Those are either verified or arithmetic, and neither is a model's job.
  */
-export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicked, paidAllowed }) {
+export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicked, paidAllowed, forcedConcept = null }) {
   return runNode(
     jobId,
     "B4",
@@ -286,17 +286,29 @@ export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicke
         stage: `B4:${reelN}`,
         model: FLASH,
         prompt: P.b4Prompt(
-          { reelN, truth, persona, assets, alreadyPicked, paidAllowed, market: truth.market, costModel },
+          { reelN, truth, persona, assets, alreadyPicked, paidAllowed, forcedConcept, market: truth.market, costModel },
           retryHint,
         ),
         temperature: 0.3,
+        /* A healthy B4 reply is ~900 tokens. Two of three B4 calls in one run degenerated
+           into an endless comma list in negative_prompt and billed the 8192 cap each. */
+        maxOutputTokens: 2048,
       });
       if (!json) throw new Error(`B4:${reelN} returned unparseable JSON`);
       json.reel_n = reelN;
 
+      /* The run controls chose this reel's concept. The model still picks the source photo
+         and the fallback; the concept itself is not its call. */
+      if (forcedConcept && json.concept_id !== forcedConcept) {
+        json.why = `set in the run controls (model had proposed ${json.concept_id})`;
+        json.concept_id = forcedConcept;
+      } else if (forcedConcept) {
+        json.why = `set in the run controls. ${json.why ?? ""}`.trim();
+      }
+
       const concept = rules.hook_bank.find((h) => h.id === json.concept_id);
       if (!concept) throw new Error(`unknown concept_id "${json.concept_id}"`);
-      if (alreadyPicked.includes(json.concept_id)) {
+      if (!forcedConcept && alreadyPicked.includes(json.concept_id)) {
         throw new Error(`concept "${json.concept_id}" was already picked for this job`);
       }
       if (concept.restrictions?.includes("never_default")) {
@@ -306,82 +318,101 @@ export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicke
       /* The path is the concept's, not the model's. rules.json v1.2 deprecated
          still_then_clip for concealment: generating from a still where the building is
          hidden made the model invent a different house, twice. */
-      json.generation_path = concept.default_path;
-      /* rules.json reverse_conceal.verified_on is veo-3.1-lite on Vertex, whatever the
-         concept's default_engine says: the fal engines are not wired, and the lastFrame
-         behaviour the path depends on was verified on Veo only. */
-      json.engine = json.generation_path === "free_2p5d" ? "none" : "veo_3_1_lite";
-      if (json.generation_path !== "free_2p5d" && !paidAllowed) {
-        throw new Error(
-          `a paid hook is already planned for this job (cost-model presets.one_paid_hook); pick a free_2p5d concept, not "${json.concept_id}"`,
-        );
+      /* A job that may not use a paid hook never fails because the model reached for
+         one. A free run failed B4 twice on dollhouse_plan_to_house; the choice is swapped
+         for the best eligible free concept instead, and the swap is recorded. */
+      if (!paidAllowed && concept.default_path !== "free_2p5d") {
+        const pool = new Set(assets.map((a) => a.room_class));
+        const fits = (h) => (h.needs || []).every((n) => n.split("|").some((c) => pool.has(c)));
+        const free = rules.hook_bank
+          .filter((h) => h.default_path === "free_2p5d" && !alreadyPicked.includes(h.id))
+          .sort((a, b) => Number(fits(b)) - Number(fits(a)) || b.scroll_stop - a.scroll_stop);
+        const preferred = free.find((h) => h.id === json.fallback_concept) ?? free[0];
+        if (!preferred) throw new Error("no free concept left for this reel");
+        json.why = `paid hook is off for this job; model proposed ${json.concept_id}, using free ${preferred.id}`;
+        json.concept_id = preferred.id;
+        return finishB4(json, preferred);
       }
-      /* The default paid hook is the rules.json concept marked default_paid (build
-         itself). It needs no aerial and no clear foreground; the drape put its cover on
-         a parked SUV every time on Lexington. Another paid concept is only accepted
-         when the default's restrictions exclude this property. */
-      const defaultPaid = rules.hook_bank.find((h) => h.default_paid);
-      if (
-        json.generation_path !== "free_2p5d" &&
-        defaultPaid &&
-        json.concept_id !== defaultPaid.id &&
-        defaultPaidEligible(defaultPaid, truth, assets) &&
-        !alreadyPicked.includes(defaultPaid.id)
-      ) {
-        throw new Error(
-          `the default paid hook is ${defaultPaid.id} and this property qualifies for it; "${json.concept_id}" is only allowed when ${defaultPaid.id} is excluded`,
-        );
-      }
-      if (!["free_2p5d", "reverse_conceal"].includes(json.generation_path)) {
-        throw new Error(`"${json.concept_id}" uses ${json.generation_path}, which has no verified pipeline in D3`);
-      }
-
-      const source = assets.find((a) => a.photo_id === json.source_photo_id);
-      if (!source) throw new Error(`source_photo_id "${json.source_photo_id}" is not in the pool`);
-      json.source_crop_9x16 = json.source_crop_9x16?.x_center != null ? json.source_crop_9x16 : source.safe_crop_9x16;
-
-      if (json.generation_path === "reverse_conceal") {
-        const prompts = hookPrompts(json.concept_id, {
-          roomClass: source.room_class,
-          vehiclesPresent: Boolean(source.flags?.vehicles_present),
-        });
-        json.still_prompt = prompts.still_prompt;
-        json.clip_prompt = prompts.clip_prompt;
-        json.prompt_template = prompts.template;
-        json.prompt_verified = prompts.verified;
-        json.last_frame_still = true;
-        json.reverse_after_generate = true;
-      } else {
-        json.still_prompt = "";
-        json.last_frame_still = null;
-        json.reverse_after_generate = false;
-      }
-      json.negative_prompt = "";
-
-      json.duration_s = costModel.hook_duration_by_concept_s[json.concept_id] ?? 0;
-      json.usable_window_s =
-        json.generation_path === "free_2p5d"
-          ? { start: 0, end: rules.job_defaults.hook_usable_s }
-          : { start: Number((json.duration_s - HOOK_WINDOW_S).toFixed(2)), end: json.duration_s };
-      json.truth_lock = { mode: "crossfade_to_source", frames: rules.job_defaults.truth_lock_frames };
-      json.est_cost = hookEstimate(json.generation_path, json.concept_id);
-      json.disclosure_label =
-        json.generation_path === "free_2p5d"
-          ? ""
-          : rules.required_overlays[truth.market]?.hook_label || "";
-      json.qa_checks = rules.qa_reject_list;
-      json.aspect = "9x16";
-      json.emit_16x9_derivative = true;
-
-      const fallback = rules.hook_bank.find((h) => h.id === json.fallback_concept);
-      if (!fallback || fallback.default_path !== "free_2p5d" || fallback.id === json.concept_id) {
-        // A paid fallback for a paid failure is how a job spends twice for nothing.
-        json.fallback_concept = "blueprint_to_photo";
-      }
-      return json;
+      return finishB4(json, concept);
     },
     { schema: "HookPlan", reelN, model: FLASH, parents: ["B0", "B1", "B2", "B3"] },
   );
+
+  /* Everything after the concept is settled: path, engine, prompts, cost, disclosure. */
+  function finishB4(json, concept) {
+    json.generation_path = concept.default_path;
+    /* rules.json reverse_conceal.verified_on is veo-3.1-lite on Vertex, whatever the
+       concept's default_engine says: the fal engines are not wired, and the lastFrame
+       behaviour the path depends on was verified on Veo only. */
+    json.engine = json.generation_path === "free_2p5d" ? "none" : "veo_3_1_lite";
+    if (json.generation_path !== "free_2p5d" && !paidAllowed) {
+      throw new Error(`"${json.concept_id}" is paid and this reel may not use a paid hook`);
+    }
+    /* The default paid hook is the rules.json concept marked default_paid (build
+       itself). It needs no aerial and no clear foreground; the drape put its cover on
+       a parked SUV every time on Lexington. Another paid concept is only accepted
+       when the default's restrictions exclude this property. */
+    const defaultPaid = rules.hook_bank.find((h) => h.default_paid);
+    if (
+      !forcedConcept &&
+      json.generation_path !== "free_2p5d" &&
+      defaultPaid &&
+      json.concept_id !== defaultPaid.id &&
+      defaultPaidEligible(defaultPaid, truth, assets) &&
+      !alreadyPicked.includes(defaultPaid.id)
+    ) {
+      throw new Error(
+        `the default paid hook is ${defaultPaid.id} and this property qualifies for it; "${json.concept_id}" is only allowed when ${defaultPaid.id} is excluded`,
+      );
+    }
+    if (!["free_2p5d", "reverse_conceal"].includes(json.generation_path)) {
+      throw new Error(`"${json.concept_id}" uses ${json.generation_path}, which has no verified pipeline in D3`);
+    }
+
+    const source = assets.find((a) => a.photo_id === json.source_photo_id);
+    if (!source) throw new Error(`source_photo_id "${json.source_photo_id}" is not in the pool`);
+    json.source_crop_9x16 = json.source_crop_9x16?.x_center != null ? json.source_crop_9x16 : source.safe_crop_9x16;
+
+    if (json.generation_path === "reverse_conceal") {
+      const prompts = hookPrompts(json.concept_id, {
+        roomClass: source.room_class,
+        vehiclesPresent: Boolean(source.flags?.vehicles_present),
+      });
+      json.still_prompt = prompts.still_prompt;
+      json.clip_prompt = prompts.clip_prompt;
+      json.prompt_template = prompts.template;
+      json.prompt_verified = prompts.verified;
+      json.last_frame_still = true;
+      json.reverse_after_generate = true;
+    } else {
+      json.still_prompt = "";
+      json.last_frame_still = null;
+      json.reverse_after_generate = false;
+    }
+    json.negative_prompt = "";
+
+    json.duration_s = costModel.hook_duration_by_concept_s[json.concept_id] ?? 0;
+    json.usable_window_s =
+      json.generation_path === "free_2p5d"
+        ? { start: 0, end: rules.job_defaults.hook_usable_s }
+        : { start: Number((json.duration_s - HOOK_WINDOW_S).toFixed(2)), end: json.duration_s };
+    json.truth_lock = { mode: "crossfade_to_source", frames: rules.job_defaults.truth_lock_frames };
+    json.est_cost = hookEstimate(json.generation_path, json.concept_id);
+    json.disclosure_label =
+      json.generation_path === "free_2p5d"
+        ? ""
+        : rules.required_overlays[truth.market]?.hook_label || "";
+    json.qa_checks = rules.qa_reject_list;
+    json.aspect = "9x16";
+    json.emit_16x9_derivative = true;
+
+    const fallback = rules.hook_bank.find((h) => h.id === json.fallback_concept);
+    if (!fallback || fallback.default_path !== "free_2p5d" || fallback.id === json.concept_id) {
+      // A paid fallback for a paid failure is how a job spends twice for nothing.
+      json.fallback_concept = ["blueprint_to_photo", "sky_drop", "paper_popup_room"].find((id) => id !== json.concept_id);
+    }
+    return json;
+  }
 }
 
 /* ------------------------------------------------------------------ B5 */

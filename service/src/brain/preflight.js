@@ -20,6 +20,7 @@ import { callText } from "../lib/vertex.js";
 import { runNode } from "./runner.js";
 import * as P from "./prompts.js";
 import { hookDisclosure } from "../hook/compliance.js";
+import { jobFlags } from "../jobOptions.js";
 import { defectMatch, subjectFromText, hostsFor, ROOM_FAMILY, copyTexts } from "./captions.js";
 
 const SCHOOL_ADJECTIVES =
@@ -534,7 +535,7 @@ export function preGenerationCheck(job, reelN) {
     return { pass: false, results: [{ rule_id: "NO_B4", level: "BLOCK", message: `reel ${reelN} has no B4 hook plan` }] };
   }
   const interiorEstimate =
-    config.interiorMotion === "veo"
+    jobFlags(job).interiorMotion === "veo"
       ? glideEstimate(selectHeroInteriors(job).filter((h) => !job.interior_clips?.[h.photo_id]).length, costModel)
       : null;
   const ctx = {

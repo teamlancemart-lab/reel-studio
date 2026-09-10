@@ -27,6 +27,7 @@ import {
 } from "./paid.js";
 import { rerollHint } from "./qa.js";
 import { renderFreeHook } from "./free.js";
+import { jobFlags, budgetCheck } from "../jobOptions.js";
 
 export const conceptById = (id) => rules.hook_bank.find((h) => h.id === id);
 
@@ -44,7 +45,7 @@ export function hookCrop(job, plan) {
 /**
  * Build the hook for one reel from its B4 plan. Writes job.hooks[reelN].
  */
-export async function buildHook(jobId, reelN, { supersedeReason = null } = {}) {
+export async function buildHook(jobId, reelN, { supersedeReason = null, forceFreeReason = null } = {}) {
   const job = readJob(jobId);
   const plan = job.nodes[`B4:${reelN}`]?.payload;
   if (!plan) throw new Error(`reel ${reelN} has no B4 hook plan`);
@@ -99,8 +100,20 @@ export async function buildHook(jobId, reelN, { supersedeReason = null } = {}) {
   }
 
   /* ------------------------------------------------------------ paid path */
-  if (!config.generativeEnabled) {
-    throw new Error("GENERATIVE_ENABLED is not 'true'. Paid hooks are gated; the free path is always available.");
+  /* A paid plan that may not run still produces a hook: its free fallback, with the
+     reason recorded. The pipeline passes forceFreeReason when pre_generation BLOCKs. */
+  const flags = jobFlags(job);
+  const budget = budgetCheck(job, plan.est_cost?.total_usd ?? 0);
+  const refuse =
+    forceFreeReason ||
+    (!config.generativeEnabled && "GENERATIVE_ENABLED is off on this server") ||
+    ((!flags.generative || !flags.paidHook) && "this job was run with the paid hook off") ||
+    (!budget.ok && budget.reason);
+  if (refuse) {
+    return fallback(jobId, reelN, plan, {
+      sourcePhotoPath, workDir, crop, attempts: [], q2: null, ledgerRowsBefore,
+      because: `paid hook not run: ${refuse}`,
+    });
   }
   if (plan.generation_path !== "reverse_conceal") {
     throw new Error(`generation_path "${plan.generation_path}" has no verified pipeline in D3; only reverse_conceal and free_2p5d run`);
