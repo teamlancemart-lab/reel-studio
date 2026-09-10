@@ -335,7 +335,9 @@ function drawOverlay(
 ) {
   const system = TYPE_SYSTEMS[overlay.voice ?? voice];
   const box = safeBox(W, H);
-  const lines = overlay.lines.filter(Boolean);
+  // Same normalisation as service/src/render/overlays.py: B6 sometimes puts a newline
+  // inside one line, and every resulting line is drawn.
+  const lines = overlay.lines.flatMap((l) => (l ? l.split("\n") : [])).filter((l) => l.trim());
   if (lines.length === 0) return;
 
   const inkTitle = onLight ? "#132038" : "#ffffff";
@@ -442,30 +444,35 @@ function drawOverlay(
     track,
   );
 
-  const subText = hasSub ? casedText(lines[1], system.sub_case) : "";
   const subTrack = system.sub_case === "smallcaps" ? W * 0.005 : 0;
-  const subPx = hasSub
-    ? fitPx(
-        ctx,
-        subText,
-        W * 0.04,
-        usable,
-        (px) => fontString(system, "sub", px, fonts),
-        subTrack,
-      )
-    : 0;
+  const subs = lines.slice(1).map((line) => {
+    const text = casedText(line, system.sub_case);
+    const px = fitPx(ctx, text, W * 0.04, usable, (p) => fontString(system, "sub", p, fonts), subTrack);
+    return { text, px };
+  });
 
   /* Lay the block out from its BOTTOM so descenders stay inside the safe zone.
      A baseline exactly on box.bottom still hangs its descenders below it. */
   const descender = 0.22;
-  const subBaseline = box.bottom - subPx * descender;
-  const titleBaseline = hasSub ? subBaseline - subPx * 1.5 : box.bottom - titlePx * descender;
+  const subBaselines: number[] = [];
+  let baseline = box.bottom;
+  for (let i = subs.length - 1; i >= 0; i--) {
+    baseline -= subs[i].px * descender;
+    subBaselines.unshift(baseline);
+    baseline -= subs[i].px * (1.5 - descender);
+  }
+  const titleBaseline = hasSub
+    ? subBaselines[0] - subs[0].px * 1.5
+    : box.bottom - titlePx * descender;
 
   const titleY =
     (overlay.system === "status_card"
       ? Math.max(box.top + titlePx, H * 0.33)
       : titleBaseline) - rise;
-  const subY = overlay.system === "status_card" ? titleY + subPx * 1.5 : subBaseline - rise;
+  const subYs =
+    overlay.system === "status_card"
+      ? subs.map((s, i) => titleY + s.px * 1.5 * (i + 1))
+      : subBaselines.map((y) => y - rise);
 
   if (system.pill) {
     ctx.font = fontString(system, "title", titlePx, fonts);
@@ -490,11 +497,11 @@ function drawOverlay(
   ctx.fillStyle = inkTitle;
   trackedText(ctx, titleCase, textLeft, titleY, track * (titlePx / titleStart), "left");
 
-  if (hasSub) {
-    ctx.font = fontString(system, "sub", subPx, fonts);
-    ctx.fillStyle = inkSub;
-    trackedText(ctx, subText, textLeft, subY, subTrack, "left");
-  }
+  ctx.fillStyle = inkSub;
+  subs.forEach((s, i) => {
+    ctx.font = fontString(system, "sub", s.px, fonts);
+    trackedText(ctx, s.text, textLeft, subYs[i], subTrack, "left");
+  });
 
   ctx.restore();
 }

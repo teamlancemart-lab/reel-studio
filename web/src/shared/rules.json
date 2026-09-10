@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.4",
   "updated": "2026-09-10",
   "price_bands": {
     "in": {
@@ -459,7 +459,8 @@
       "duration_s": 8,
       "last_frame_still": true,
       "reverse_after_generate": true,
-      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice."
+      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice.",
+      "conceal_mode": "cover"
     },
     {
       "id": "sky_drop",
@@ -505,19 +506,22 @@
     },
     {
       "id": "block_build",
-      "label": "Building constructs itself on the lot",
-      "scroll_stop": 0.75,
+      "label": "Build itself: the house assembles on its empty lot",
+      "scroll_stop": 0.9,
       "engine_survival": 0.6,
       "compliance_fit": 0.7,
       "needs": [
-        "aerial_34"
+        "exterior_front|aerial_34"
       ],
       "default_path": "reverse_conceal",
-      "default_engine": "hailuo_02_standard",
+      "default_engine": "veo_3_1_lite",
       "theatrical_objects": [
         "bare lot",
-        "slab",
-        "framing"
+        "foundation slab",
+        "framing",
+        "walls rising",
+        "brickwork going up",
+        "roof forming"
       ],
       "restrictions": [
         "not_for_towers",
@@ -529,7 +533,10 @@
       "duration_s": 8,
       "last_frame_still": true,
       "reverse_after_generate": true,
-      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice."
+      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice.",
+      "default_paid": true,
+      "conceal_mode": "remove",
+      "notes": "Default paid hook (2026-09-10). Generated FORWARD as the house deconstructing to a bare slab from the real photo as first frame, with the empty-lot still as lastFrame, then reversed so it builds up and ends on the real photo. Needs no aerial and no clear foreground, unlike the drape, which draped a parked SUV on every Lexington attempt. Sequence from the Electricity reference: bare lot, slab, framing rises floor by floor, walls, roof, crossfade to the true photo."
     },
     {
       "id": "paper_popup_room",
@@ -588,7 +595,8 @@
       "duration_s": 8,
       "last_frame_still": true,
       "reverse_after_generate": true,
-      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice."
+      "duration_note": "8s is forced by lastFrame on Vertex, not a creative choice.",
+      "conceal_mode": "cover"
     }
   ],
   "engine_bank": {
@@ -886,7 +894,10 @@
         "{brokerage}",
         "Equal Housing Opportunity",
         "Opening scene digitally created. Originals: {originals_url}"
-      ]
+      ],
+      "motion_label": "AI-animated camera move from the listing photo.",
+      "motion_cta_line": "Opening scene and camera moves digitally created. Originals: {originals_url}",
+      "motion_only_cta_line": "Camera moves digitally created from the listing photos. Originals: {originals_url}"
     },
     "in": {
       "hook_label": "AI-generated / artist's impression",
@@ -896,7 +907,8 @@
         "Agent RERA No. {rera_agent}"
       ],
       "qr": "{rera_portal_url}",
-      "area_label_required": "Carpet area"
+      "area_label_required": "Carpet area",
+      "motion_label": "AI-animated camera move / artist's impression"
     }
   },
   "overlay_style": {
@@ -998,6 +1010,29 @@
       "possession",
       "minutes from",
       "near metro"
+    ]
+  },
+  "defect_terms": {
+    "note": "Condition problems are recorded (B1 defects, with the photo) and NEVER marketed. Word-boundary, case-insensitive regex fragments. B1 quarantines observations that match, B6 rejects copy that matches, CAPTION_DEFECT BLOCKs export. 'water' is deliberately blunt: 'waterfront' is one word and does not match, 'water view' does.",
+    "patterns": [
+      "damag\\w*",
+      "defects?",
+      "defective",
+      "repairs?",
+      "repaired",
+      "issues?",
+      "water",
+      "mou?ld\\w*",
+      "mildew",
+      "crack\\w*",
+      "broken",
+      "leak(s|ing|ed|y)?",
+      "rot(ten|ting)?",
+      "stain(s|ed)?",
+      "peeling",
+      "needs? work",
+      "fixer( upper)?",
+      "as[- ]is"
     ]
   },
   "qa_reject_list": [
@@ -1144,8 +1179,8 @@
       "id": "INTERIOR_ALTERED",
       "stage": "pre_export",
       "level": "BLOCK",
-      "when": "any interior shot source is a generated clip",
-      "message": "Interiors must be the untouched photos with motion only."
+      "when": "any interior shot source is a generated clip, UNLESS INTERIOR_MOTION=veo AND that clip passed interior Q2 AND the segment carries the motion disclosure label",
+      "message": "Interiors are real photos unless an approved, labelled camera-glide clip replaces the still. A generated interior without a passing QA or a label never exports."
     },
     {
       "id": "STAGING_UNLABELLED",
@@ -1209,6 +1244,20 @@
       "level": "BLOCK",
       "when": "any card bounding box outside safe_zone_9x16",
       "message": "Text inside the Reels UI overlay zone."
+    },
+    {
+      "id": "CAPTION_DEFECT",
+      "stage": "pre_export",
+      "level": "BLOCK",
+      "when": "any card, caption, CTA line, post_caption or hashtag matches defect_terms",
+      "message": "Property defects, damage and repairs never appear in reel copy."
+    },
+    {
+      "id": "CAPTION_SUBJECT_MISMATCH",
+      "stage": "pre_export",
+      "level": "BLOCK",
+      "when": "a caption about a room sits on a shot whose room_class is a different room, or a whole-property fact sits on a single room",
+      "message": "A caption must sit on a shot of the room it describes."
     }
   ],
   "job_defaults": {
@@ -1281,5 +1330,35 @@
     "crop_before_generate": "Always crop to 9:16 before any image or video call. A 16:9 still sent to a 9:16 endpoint gets letterboxed and ~40 percent of the paid pixels are black bars.",
     "output_fps": 30,
     "veo_native_fps": 24
+  },
+  "interior_motion": {
+    "note": "Opt-in (INTERIOR_MOTION=veo). Veo camera glide from the real interior photo as first frame, architecture locked by prompt and verified by interior Q2. Any change to a wall, door, window or fixture rejects the clip and that shot falls back to 2.5d. Clips are job assets: generated once, reused by every reel. Never generated during export.",
+    "default": "2.5d",
+    "max_hero_interiors": 3,
+    "hero_categories": [
+      {
+        "name": "kitchen",
+        "room_classes": [
+          "kitchen"
+        ]
+      },
+      {
+        "name": "primary room",
+        "room_classes": [
+          "primary_bedroom",
+          "bedroom"
+        ]
+      },
+      {
+        "name": "living space",
+        "room_classes": [
+          "living",
+          "dining"
+        ]
+      }
+    ],
+    "clip_seconds": 4,
+    "prompt": "Slow smooth camera push forward through the room, the room and everything in it stays exactly as photographed, no walls move, no doors open, locked architecture, only the camera moves.",
+    "max_speedup": 2.0
   }
 }

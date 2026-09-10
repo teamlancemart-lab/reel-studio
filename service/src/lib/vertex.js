@@ -68,12 +68,19 @@ function baseUrl() {
   );
 }
 
+/* A request with no timeout waited on a dead connection for undici's full 300s before
+   "fetch failed" (B4:1, 2026-09-10). Two minutes is ~10x the slowest healthy call seen;
+   an abort still lands in the caller's catch, so the ledger row and the node retry work
+   exactly as they do for any other failure. */
+const REQUEST_TIMEOUT_MS = Number(process.env.VERTEX_TIMEOUT_MS || 120_000);
+
 async function post(url, body, { retryOn401 = true } = {}) {
   const token = await getToken();
   const r = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const text = await r.text();
   if (r.status === 401 && retryOn401) {
@@ -111,6 +118,12 @@ function usageOf(res) {
   };
 }
 
+/** Named on the ledger row, so a truncated reply is visible where its cost is. */
+function truncated(res) {
+  const reason = res?.candidates?.[0]?.finishReason;
+  return reason && reason !== "STOP" ? `finishReason ${reason}` : null;
+}
+
 function firstText(res) {
   return res?.candidates?.[0]?.content?.parts?.find((p) => p.text)?.text ?? "";
 }
@@ -129,11 +142,15 @@ export async function callText({
   json = true,
   temperature = 0.2,
   thinkingBudget = 0,
+  /* A B4 reply ran away to 70,618 tokens (Rs 13.89 for a node that costs Rs 0.25) and was
+     unparseable anyway. Every schema-shaped reply fits in a fraction of this. */
+  maxOutputTokens = 8192,
 }) {
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
       temperature,
+      maxOutputTokens,
       ...(json ? { responseMimeType: "application/json" } : {}),
       /* Brain nodes are structured extraction against a fixed schema, not reasoning
          problems. Thinking tokens bill at the OUTPUT rate, so leaving them on roughly
@@ -167,6 +184,7 @@ export async function callText({
     makeRow({
       jobId, reelN, stage, provider: "vertex", providerModel: model,
       units: usage.total, unitType: "tokens", usd,
+      note: truncated(res),
     }),
   );
 
@@ -185,6 +203,7 @@ export async function callVision({
   json = true,
   temperature = 0.2,
   thinkingBudget = 0,
+  maxOutputTokens = 4096,
 }) {
   const parts = [
     { text: prompt },
@@ -196,6 +215,7 @@ export async function callVision({
     contents: [{ role: "user", parts }],
     generationConfig: {
       temperature,
+      maxOutputTokens,
       ...(json ? { responseMimeType: "application/json" } : {}),
       ...(thinkingBudget != null ? { thinkingConfig: { thinkingBudget } } : {}),
     },
@@ -223,6 +243,7 @@ export async function callVision({
     makeRow({
       jobId, reelN, stage, provider: "vertex", providerModel: model,
       units: usage.total, unitType: "tokens", usd,
+      note: truncated(res),
     }),
   );
 

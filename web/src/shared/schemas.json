@@ -134,6 +134,10 @@
           "items": {
             "$ref": "#/$defs/SourceRef"
           }
+        },
+        "subject": {
+          "type": "string",
+          "description": "Room family the card is about (kitchen, bedroom, exterior, whole...). Set by the binder."
         }
       },
       "required": [
@@ -328,7 +332,7 @@
           },
           "price_display": {
             "type": "string",
-            "description": "e.g. \u20b91.85 Cr or $789,900"
+            "description": "e.g. ₹1.85 Cr or $789,900"
           },
           "price_per_area": {
             "type": [
@@ -675,6 +679,38 @@
       },
       "meta": {
         "$ref": "#/$defs/NodeMeta"
+      },
+      "defects": {
+        "type": "array",
+        "description": "Condition problems seen in photos or stated on the form. Recorded so they are never marketed: nothing in observed, specials, provable_numbers or any copy may cite them.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "photo_id": {
+              "type": "string"
+            },
+            "term": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "text"
+          ]
+        }
+      },
+      "defect_quarantine": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "What the B1 post-process moved out of observed/specials/provable_numbers, and why."
       }
     },
     "required": [
@@ -1002,6 +1038,21 @@
       "reverse_after_generate": {
         "type": "boolean",
         "description": "true for reverse_conceal: the clip is generated forward (object descending) and reversed at assembly."
+      },
+      "why": {
+        "type": "string",
+        "description": "Why this concept scored highest for this listing and pool."
+      },
+      "source_crop_9x16": {
+        "$ref": "#/$defs/Crop",
+        "description": "The 9:16 crop the hook is cut from. Defaults to B0 safe_crop_9x16; editable on the B4 card because the hook frame is the most-watched frame in the reel."
+      },
+      "prompt_template": {
+        "type": "string",
+        "description": "Where still_prompt/clip_prompt came from, e.g. hook-v4.helicopter_drape. Paid prompts are verified templates, not model copy."
+      },
+      "prompt_verified": {
+        "type": "boolean"
       }
     },
     "required": [
@@ -1372,6 +1423,69 @@
       },
       "meta": {
         "$ref": "#/$defs/NodeMeta"
+      },
+      "caption_binding": {
+        "type": "array",
+        "description": "Where each proof card and fact caption landed and why: kept on a matching room, moved to one, or dropped with a reason. Written by code, not the model.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "card": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "subject": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "subject_via": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "from_shot": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "from_room": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "to_shot": {
+              "type": "string"
+            },
+            "to_room": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "kept",
+                "moved",
+                "dropped"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "card",
+            "action"
+          ]
+        }
       }
     },
     "required": [

@@ -212,11 +212,16 @@ function buildOne({ formatEntry, shotList, copy, pacing, photoUrl, typeVoice }) 
     });
   }
 
+  /* The subject rides along so CAPTION_SUBJECT_MISMATCH checks what the binder decided,
+     not a re-guess from the words. */
+  const subjectOf = (card) => (card?.subject ? { subject: card.subject } : {});
+
   if (copy.proof_card) {
     attach(bySlot("proof") || bySlot("exterior_title"), {
       kind: "caption",
       system: "address_only",
       lines: cardLines(copy.proof_card),
+      ...subjectOf(copy.proof_card),
     });
   }
 
@@ -226,7 +231,7 @@ function buildOne({ formatEntry, shotList, copy, pacing, photoUrl, typeVoice }) 
       notes.push(`fact_caption for unknown shot "${caption.shot_id}" dropped`);
       continue;
     }
-    attach(seg, { kind: "caption", system: "address_only", lines: cardLines(caption) });
+    attach(seg, { kind: "caption", system: "address_only", lines: cardLines(caption), ...subjectOf(caption) });
   }
 
   if (copy.floor_plan_card) {

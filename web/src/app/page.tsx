@@ -15,6 +15,7 @@ import FactsForm from "@/components/FactsForm";
 import ServicePanel from "@/components/ServicePanel";
 import UploadPanel from "@/components/UploadPanel";
 import BrainPanel from "@/components/BrainPanel";
+import HookPanel from "@/components/HookPanel";
 import { absolutiseRecipe, getRecipes } from "@/lib/nodes";
 import type { Bucket, StudioPhoto } from "@/lib/photos";
 import { EMPTY_FACTS, buildRecipeFromStudio, imageBank, type Facts } from "@/lib/stub-recipe";
@@ -136,7 +137,7 @@ function Studio() {
           <div>
             <h1 className="text-sm font-semibold">Listing Reel Studio</h1>
             <p className="text-[11px] text-neutral-500">
-              D1 skeleton · rules v{RULES_VERSION} · cost-model v{COST_MODEL_VERSION}
+              D3 hook & export · rules v{RULES_VERSION} · cost-model v{COST_MODEL_VERSION}
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -183,6 +184,7 @@ function Studio() {
               }}
             />
           )}
+          {jobId && <HookPanel jobId={jobId} />}
         </div>
 
         <CanvasPreview
