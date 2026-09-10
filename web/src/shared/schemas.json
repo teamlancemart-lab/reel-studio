@@ -328,7 +328,7 @@
           },
           "price_display": {
             "type": "string",
-            "description": "e.g. \u20b91.85 Cr or $789,900"
+            "description": "e.g. ₹1.85 Cr or $789,900"
           },
           "price_per_area": {
             "type": [
@@ -1002,6 +1002,21 @@
       "reverse_after_generate": {
         "type": "boolean",
         "description": "true for reverse_conceal: the clip is generated forward (object descending) and reversed at assembly."
+      },
+      "why": {
+        "type": "string",
+        "description": "Why this concept scored highest for this listing and pool."
+      },
+      "source_crop_9x16": {
+        "$ref": "#/$defs/Crop",
+        "description": "The 9:16 crop the hook is cut from. Defaults to B0 safe_crop_9x16; editable on the B4 card because the hook frame is the most-watched frame in the reel."
+      },
+      "prompt_template": {
+        "type": "string",
+        "description": "Where still_prompt/clip_prompt came from, e.g. hook-v4.helicopter_drape. Paid prompts are verified templates, not model copy."
+      },
+      "prompt_verified": {
+        "type": "boolean"
       }
     },
     "required": [

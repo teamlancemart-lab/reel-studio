@@ -18,6 +18,7 @@ import { rules, config } from "../config.js";
 import { callText } from "../lib/vertex.js";
 import { runNode } from "./runner.js";
 import * as P from "./prompts.js";
+import { hookDisclosure } from "../hook/compliance.js";
 
 const SCHOOL_ADJECTIVES =
   /\b(top[- ]?rated|best|excellent|great|good|award[- ]?winning|blue[- ]?ribbon|highly[- ]?rated|desirable|sought[- ]?after)\b/i;
@@ -257,33 +258,106 @@ const PREDICATES = {
     }
     return hits.length ? `${hits.join("; ")} (format_id+tier; concept_id needs B4)` : null;
   },
+
+  /* ---- hook rules. ctx.hooks is the job's B4 plans; ctx.reelN narrows to one reel. */
+
+  US_ALTERED_NO_DISCLOSURE: (c) => {
+    if (c.market !== "us") return null;
+    const problems = [];
+    for (const h of scopedHooks(c)) {
+      if (h.generation_path === "free_2p5d") continue;
+      const d = hookDisclosure({ market: c.market, truth: c.truth, truthLockS: 2.2 });
+      if (!h.disclosure_label) problems.push(`reel ${h.reel_n}: plan has no disclosure_label`);
+      problems.push(...d.problems.map((m) => `reel ${h.reel_n}: ${m}`));
+    }
+    return problems.length ? problems.join("; ") : null;
+  },
+
+  HOOK_SOURCE_HAS_PEOPLE: (c) => {
+    const hits = scopedHooks(c).filter((h) => {
+      const a = c.allAssets.find((x) => x.photo_id === h.source_photo_id);
+      return a?.flags?.people_present;
+    });
+    return hits.length ? hits.map((h) => `reel ${h.reel_n}: ${h.source_photo_id}`).join(", ") : null;
+  },
+
+  HOOK_CONCEPT_ASSET_FIT: (c) => {
+    const hits = scopedHooks(c).filter((h) => h.scores?.asset_fit === 0);
+    return hits.length ? hits.map((h) => `reel ${h.reel_n}: ${h.concept_id} asset_fit 0`).join(", ") : null;
+  },
+
+  HOOK_BLOCK_BUILD_TOWER: (c) => {
+    const hits = scopedHooks(c).filter(
+      (h) => h.concept_id === "block_build" && ["apartment", "penthouse"].includes(c.truth.facts.property_type),
+    );
+    return hits.length ? hits.map((h) => `reel ${h.reel_n}: block_build on ${c.truth.facts.property_type}`).join(", ") : null;
+  },
+
+  HOOK_FLYOVER_DEFAULT: (c) => {
+    const hits = scopedHooks(c).filter((h) => h.concept_id === "unveiling_flyover");
+    return hits.length ? hits.map((h) => `reel ${h.reel_n}`).join(", ") : null;
+  },
+
+  NO_TRUTH_LOCK: (c) => {
+    const hits = scopedHooks(c).filter(
+      (h) => h.generation_path !== "free_2p5d" && !((h.truth_lock?.frames ?? 0) >= 8),
+    );
+    return hits.length ? hits.map((h) => `reel ${h.reel_n}: frames ${h.truth_lock?.frames ?? "missing"}`).join(", ") : null;
+  },
+
+  BUDGET: (c) => {
+    const total = (c.hooks || []).reduce((s, h) => s + (h.est_cost?.total_usd || 0), 0);
+    return total > 3.0 ? `sum of hook est_cost.total_usd = $${total.toFixed(2)}` : null;
+  },
+
+  /* ---- export-time rules: need the built hook and the rendered overlays. */
+
+  Q_FAIL_TWICE: (c) => {
+    const rec = c.hookRecord;
+    if (!rec) return "no hook record for this reel";
+    const q1Fails = (rec.attempts || []).filter((a) => !a.q1?.pass).length;
+    const failedOut = q1Fails >= 2 || rec.q2?.pass === false;
+    if (failedOut && !rec.fell_back) return `QA failed (${q1Fails} Q1 rejections, Q2 ${rec.q2?.pass}) and no fallback ran`;
+    return null;
+  },
+
+  SAFE_ZONE: (c) => {
+    const bad = (c.overlayBoxes || []).filter((b) => b.outside_safe_zone);
+    return bad.length
+      ? bad.map((b) => `${b.id} "${b.text}" box ${b.box.map((n) => Math.round(n)).join(",")}`).join("; ")
+      : null;
+  },
 };
 
-/** Rules whose inputs do not exist until a later stage. Never silently PASS. */
-const DEFERRED = {
-  US_ALTERED_NO_DISCLOSURE: "needs B4 hook.generation_path (D3)",
-  HOOK_SOURCE_HAS_PEOPLE: "needs B4 hook.source_photo_id (D3)",
-  HOOK_CONCEPT_ASSET_FIT: "needs B4 hook.scores.asset_fit (D3)",
-  HOOK_BLOCK_BUILD_TOWER: "needs B4 hook.concept_id (D3)",
-  HOOK_FLYOVER_DEFAULT: "needs B4 hook.concept_id (D3)",
-  NO_TRUTH_LOCK: "needs B4 hook.truth_lock (D3)",
-  Q_FAIL_TWICE: "needs Q1/Q2 (D3)",
-  BUDGET: "needs B4 hook.est_cost (D3)",
-  SAFE_ZONE: "needs the Pillow overlay renderer to measure bounding boxes (D3)",
+function scopedHooks(c) {
+  return (c.hooks || []).filter((h) => c.reelN == null || h.reel_n === c.reelN);
+}
+
+/**
+ * Rules whose inputs do not exist at the stage they are evaluated. Never silently PASS.
+ *
+ * The brain's B8 runs before any hook is built or any overlay is rendered, so these two
+ * are deferred THERE and evaluated for real by render/export.js, which has the inputs.
+ */
+const DEFERRED_IN_BRAIN = {
+  Q_FAIL_TWICE: "evaluated at export by render/export.js, once the hook record exists",
+  SAFE_ZONE: "evaluated at export by render/export.js from the Pillow bounding boxes",
 };
 
 /**
  * @param stage "pre_generation" | "pre_export"
+ * @param only  evaluate just these rule ids (export-time rules); nothing is deferred
  */
-export function evaluateRules(ctx, stage) {
+export function evaluateRules(ctx, stage, { only = null } = {}) {
   const results = [];
   const deferred = [];
 
   for (const rule of rules.preflight_rules) {
     if (rule.stage !== stage) continue;
 
-    if (DEFERRED[rule.id]) {
-      deferred.push({ rule_id: rule.id, level: rule.level, reason: DEFERRED[rule.id] });
+    if (only && !only.includes(rule.id)) continue;
+    if (!only && DEFERRED_IN_BRAIN[rule.id]) {
+      deferred.push({ rule_id: rule.id, level: rule.level, reason: DEFERRED_IN_BRAIN[rule.id] });
       continue;
     }
 
@@ -332,7 +406,7 @@ export function evaluateRules(ctx, stage) {
  */
 export async function runB8(
   jobId,
-  { stage = "pre_export", truth, formats, shots, assets, copySets, pacings, recipes, tracks },
+  { stage = "pre_export", truth, formats, shots, assets, copySets, pacings, recipes, tracks, hooks = [] },
 ) {
   const strings = copyStrings(copySets);
 
@@ -365,6 +439,8 @@ export async function runB8(
         tracks,
         strings,
         phraseScan,
+        hooks,
+        allAssets: assets,
       };
 
       const { results, deferred } = evaluateRules(ctx, stage);
@@ -376,9 +452,37 @@ export async function runB8(
         results,
         deferred,
         phrase_scan: phraseScan,
-        est_total_usd: 0, // no paid generation in D2; B4 fills this in D3
+        est_total_usd: Number(hooks.reduce((s, h) => s + (h.est_cost?.total_usd || 0), 0).toFixed(3)),
       };
     },
     { schema: "PreflightResult", model: config.textModel, parents: ["B1", "B5", "B6", "B7"] },
   );
+}
+
+/**
+ * The pre_generation gate for one reel's hook. Pure, zero model calls, zero cost, so
+ * the Generate button can ask it on every render.
+ */
+export function preGenerationCheck(job, reelN) {
+  const truth = job.nodes.B1?.payload;
+  if (!truth) return { pass: false, results: [{ rule_id: "NO_B1", level: "BLOCK", message: "B1 listing truth missing" }] };
+  const hooks = Object.keys(job.nodes)
+    .filter((k) => k.startsWith("B4:"))
+    .map((k) => job.nodes[k].payload)
+    .filter(Boolean);
+  if (!hooks.find((h) => h.reel_n === reelN)) {
+    return { pass: false, results: [{ rule_id: "NO_B4", level: "BLOCK", message: `reel ${reelN} has no B4 hook plan` }] };
+  }
+  const ctx = {
+    market: truth.market,
+    truth,
+    hooks,
+    reelN,
+    allAssets: job.nodes.B0?.payload?.assets || [],
+    strings: [],
+    phraseScan: [],
+    copySets: [],
+  };
+  const { results, deferred } = evaluateRules(ctx, "pre_generation");
+  return { stage: "pre_generation", reel_n: reelN, pass: !results.some((r) => r.level === "BLOCK"), results, deferred };
 }

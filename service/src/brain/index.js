@@ -1,11 +1,12 @@
 /**
  * The brain, end to end.
  *
- * B0 -> dedupe -> B1 -> B2 -> B3 -> B5 -> (B6, B7 per reel) -> B8 -> buildRecipes
+ * B0 -> dedupe -> B1 -> B2 -> B3 -> B4 per reel -> B5 -> (B6, B7 per reel) -> B8 -> buildRecipes
  *
  * Cheap-first ordering is not an accident of sequence: B8 runs before anything can be
  * generated, so a Fair Housing violation costs one text call rather than three Veo
- * clips. D3 inserts B4 and the paid hook path between B3 and B5.
+ * clips. B4 only PLANS the hook. Nothing here spends on generation: the paid hook runs
+ * from POST /jobs/:id/hooks/:reelN/generate, behind the pre_generation gate.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -27,6 +28,7 @@ import {
   runB1,
   runB2,
   runB3,
+  runB4,
   runB5,
   runB6,
   runB7,
@@ -110,6 +112,24 @@ export async function runBrain(jobId, { resume = false } = {}) {
   setStage(jobId, "brain:B3", 0.45);
   const formats = await reuse("B3", () => runB3(jobId, { truth, persona, assets }));
 
+  /* ---- B4, per reel. One paid hook per job at most (cost-model presets.one_paid_hook). */
+  const hooks = [];
+  for (const entry of formats.reels) {
+    const reelN = entry.reel_n;
+    setStage(jobId, `brain:B4:${reelN}`, 0.47 + 0.02 * reelN);
+    hooks.push(
+      await reuse(`B4:${reelN}`, () =>
+        runB4(jobId, reelN, {
+          truth,
+          persona,
+          assets,
+          alreadyPicked: hooks.map((h) => h.concept_id),
+          paidAllowed: !hooks.some((h) => h.generation_path !== "free_2p5d"),
+        }),
+      ),
+    );
+  }
+
   /* ---- B5 ---- */
   setStage(jobId, "brain:B5", 0.55);
   const shotList = await reuse("B5", () =>
@@ -183,6 +203,7 @@ export async function runBrain(jobId, { resume = false } = {}) {
     pacings,
     recipes,
     tracks,
+    hooks,
   });
 
   const finalJob = readJob(jobId);
@@ -242,6 +263,19 @@ export async function regenerateNode(jobId, nodeKey) {
         persona: payloadOf("B2"),
         assets: survivors(),
       });
+    case "B4": {
+      const others = Object.keys(job.nodes)
+        .filter((k) => k.startsWith("B4:") && k !== nodeKey)
+        .map((k) => job.nodes[k].payload)
+        .filter(Boolean);
+      return runB4(jobId, reelN, {
+        truth: payloadOf("B1"),
+        persona: payloadOf("B2"),
+        assets: survivors(),
+        alreadyPicked: others.map((h) => h.concept_id),
+        paidAllowed: !others.some((h) => h.generation_path !== "free_2p5d"),
+      });
+    }
     case "B5":
       return runB5(jobId, {
         truth: payloadOf("B1"),
@@ -283,6 +317,7 @@ export async function regenerateNode(jobId, nodeKey) {
         pacings: formats.reels.map((r) => payloadOf(`B7:${r.reel_n}`)),
         recipes: job.recipes || [],
         tracks,
+        hooks: formats.reels.map((r) => job.nodes[`B4:${r.reel_n}`]?.payload).filter(Boolean),
       });
     }
     default:

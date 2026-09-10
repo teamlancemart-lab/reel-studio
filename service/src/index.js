@@ -1,5 +1,5 @@
 /**
- * Railway render service. D1 surface:
+ * Railway render service.
  *
  *   GET  /health                  liveness + what the container actually has
  *   POST /jobs                    multipart photos[] + facts JSON -> { jobId }
@@ -7,6 +7,15 @@
  *   GET  /jobs/:id                full job JSON
  *   GET  /jobs/:id/events         SSE: stage, progress, node payloads, ledger, artefacts
  *   GET  /jobs/:id/file/:name     streams an artefact
+ *
+ * D3:
+ *   GET  /jobs/:id/hooks                       hook cards: plan, preflight, hook, versions
+ *   POST /jobs/:id/hooks/:reelN/generate       build the hook (paid or free), 409 on BLOCK
+ *   POST /jobs/:id/reels/:reelN/export         render a numbered 1080x1920 master
+ *   POST /jobs/:id/retune                      re-cut the hook window and re-render. FREE:
+ *                                              reverse, cut, overlays, assembly. Zero
+ *                                              model calls, measured by the ledger.
+ *   GET  /jobs/:id/reels/:reelN/versions
  *
  * The GCP service-account key lives here and only here. /web never sees it.
  */
@@ -24,6 +33,7 @@ import {
   bus,
   photosDir,
   jobDir,
+  emit,
 } from "./store.js";
 import { runJobDetached } from "./pipeline.js";
 import { ledgerTotals } from "./ledger.js";
@@ -33,6 +43,9 @@ import { corsMiddleware } from "./lib/cors.js";
 import { saveNode, setLock } from "./brain/runner.js";
 import { regenerateNode, rebuildRecipes, runBrain } from "./brain/index.js";
 import { rebuildCostInr, staleKeys, NODE_LABEL } from "./brain/graph.js";
+import { preGenerationCheck } from "./brain/preflight.js";
+import { buildHook } from "./hook/index.js";
+import { exportReel } from "./render/export.js";
 
 /** Which schema an edited payload is validated against, by node. */
 const SCHEMA_BY_NODE = {
@@ -66,7 +79,7 @@ app.get("/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "reel-studio-service",
-    stage: "D1",
+    stage: "D3",
     uptimeS: Math.round(process.uptime()),
     node: process.version,
     dataDir: config.dataDir,
@@ -299,6 +312,82 @@ app.get("/jobs/:id/recipes", (req, res) => {
     notes: job.recipeNotes ?? [],
     problems: job.recipeProblems ?? [],
   });
+});
+
+/* ------------------------------------------------------------ D3: hooks */
+
+/** Hooks currently being generated, so a double click does not buy two Veo clips. */
+const generating = new Set();
+
+app.get("/jobs/:id/hooks", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  const reels = (job.nodes.B3?.payload?.reels || []).map((r) => {
+    const planNode = job.nodes[`B4:${r.reel_n}`];
+    return {
+      reel_n: r.reel_n,
+      format_id: r.format_id,
+      tier: r.tier,
+      plan: planNode?.payload ?? null,
+      plan_status: planNode ? { status: planNode.status, stale: planNode.stale, version: planNode.version, cost_inr: planNode.cost_inr } : null,
+      preflight: planNode ? preGenerationCheck(job, r.reel_n) : null,
+      generating: generating.has(`${job.jobId}:${r.reel_n}`),
+      hook: job.hooks?.[r.reel_n] ?? null,
+      versions: job.reels?.[r.reel_n]?.versions ?? [],
+    };
+  });
+  res.json({ jobId: job.jobId, reels, ledger: ledgerTotals(job.ledger), generativeEnabled: config.generativeEnabled });
+});
+
+app.post("/jobs/:id/hooks/:reelN/generate", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  const reelN = Number(req.params.reelN);
+  const gate = preGenerationCheck(job, reelN);
+  if (!gate.pass) {
+    return res.status(409).json({
+      error: "pre_generation preflight BLOCK",
+      blocks: gate.results.filter((r) => r.level === "BLOCK"),
+    });
+  }
+  const key = `${job.jobId}:${reelN}`;
+  if (generating.has(key)) return res.status(409).json({ error: `reel ${reelN} hook is already generating` });
+
+  generating.add(key);
+  res.status(202).json({ ok: true, reelN, events: `/jobs/${job.jobId}/events` });
+  buildHook(job.jobId, reelN, { supersedeReason: req.body?.reason || null })
+    .catch((err) => emit(job.jobId, "hook", { reelN, step: "failed", reason: err.message.slice(0, 500) }))
+    .finally(() => generating.delete(key));
+});
+
+app.post("/jobs/:id/reels/:reelN/export", async (req, res) => {
+  try {
+    const record = await exportReel(req.params.id, Number(req.params.reelN), { kind: "export" });
+    res.json({ ok: true, version: record });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.post("/jobs/:id/retune", async (req, res) => {
+  const { reelN, windowStart = null, windowLength } = req.body || {};
+  if (!reelN) return res.status(400).json({ error: "reelN is required" });
+  try {
+    const record = await exportReel(req.params.id, Number(reelN), {
+      kind: "retune",
+      windowStart: windowStart == null ? null : Number(windowStart),
+      ...(windowLength != null ? { windowLength: Number(windowLength) } : {}),
+    });
+    res.json({ ok: true, free: record.ledger.new_rows === 0, version: record });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.get("/jobs/:id/reels/:reelN/versions", (req, res) => {
+  const job = readJob(req.params.id);
+  if (!job) return res.status(404).json({ error: "no such job" });
+  res.json({ versions: job.reels?.[req.params.reelN]?.versions ?? [] });
 });
 
 /* ------------------------------------------------------------------ SSE */

@@ -332,3 +332,48 @@ ${j(strings)}${JSON_ONLY}`,
     retryHint,
   );
 }
+
+/* ------------------------------------------------------------------- B4 */
+
+export function b4Prompt(
+  { reelN, truth, persona, assets, alreadyPicked, paidAllowed, market, costModel },
+  retryHint,
+) {
+  const pool = assets.map((a) => ({
+    photo_id: a.photo_id,
+    room_class: a.room_class,
+    hook_candidate: a.hook_candidate,
+    people: a.flags?.people_present ?? false,
+    features: a.features,
+    safe_crop_9x16: a.safe_crop_9x16,
+  }));
+
+  return withRetry(
+    `Select one hook concept for reel ${reelN} from the hook bank, excluding ${j(alreadyPicked)}. Return JSON only.
+
+Score each remaining concept: scroll_stop x engine_survival x compliance_fit x asset_fit x novelty.
+- asset_fit is 0 when the concept needs an asset the pool lacks. Each concept's "needs" is a list of requirements where "a|b" means either satisfies it; check it against the room classes actually present in the photo pool.
+- novelty is 1 (already-picked concepts are excluded outright).
+- Skip any concept whose restrictions include "never_default".
+- paid_allowed is ${paidAllowed}. ${
+      paidAllowed
+        ? "A concept whose default_path is not free_2p5d may be chosen."
+        : "Another reel already has the job's one paid hook: choose ONLY concepts whose default_path is free_2p5d."
+    }
+
+Pick the top score and fill:
+- concept_id, scores {scroll_stop, engine_survival, compliance_fit, asset_fit, novelty, total}
+- why: one sentence on why this concept scored highest for THIS listing and pool
+- ranked_alternatives: the next three [{concept_id,total}]
+- source_photo_id: a photo with hook_candidate true. If none has it, the best exterior_front for an exterior concept, or the best living/kitchen for a room concept. Never a photo with people.
+- clip_prompt: one sentence describing the motion (the code replaces it with the verified prompt for paid paths)
+- fallback_concept: the next best concept id whose default_path is free_2p5d, so a QA failure costs nothing more.
+The code fills generation_path, engine, prompts, duration, window, truth lock, cost and disclosure from rules.json and cost-model.json; send any value for them.
+
+hook bank: ${j(rules.hook_bank)}
+market: ${market}
+property_type: ${truth.facts.property_type}
+photo pool: ${j(pool)}${schemaBlock("HookPlan")}${JSON_ONLY}`,
+    retryHint,
+  );
+}

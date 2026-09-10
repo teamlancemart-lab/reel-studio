@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { config, rules } from "../config.js";
+import { config, rules, costModel } from "../config.js";
 import { callText, callVision } from "../lib/vertex.js";
 import { photosDir, jobDir, readJob } from "../store.js";
 import { runNode } from "./runner.js";
@@ -15,6 +15,8 @@ import { phash } from "./phash.js";
 import { dedupe } from "./dedupe.js";
 import { fitShotsToTier, buildCutMap } from "./fit.js";
 import * as P from "./prompts.js";
+import { reverseConcealPrompts as hookPrompts } from "../hook/prompts.js";
+import { HOOK_WINDOW_S } from "../hook/paid.js";
 
 const FLASH = config.textModel;
 const LITE = config.textLiteModel;
@@ -214,6 +216,140 @@ export async function runB3(jobId, { truth, persona, assets }) {
       return json;
     },
     { schema: "FormatPlan", model: LITE, parents: ["B1", "B2"] },
+  );
+}
+
+/* ------------------------------------------------------------------ B4 */
+
+/** cost-model.json hook_path, priced deterministically. The model does not do arithmetic. */
+export function hookEstimate(generationPath, conceptId) {
+  const usdInr = costModel.fx.usd_inr;
+  const spec = costModel.hook_path[generationPath];
+  if (!spec || generationPath === "free_2p5d") {
+    return { still_inr: 0, clip_usd: 0, retry_allowance_usd: 0, total_usd: 0, total_inr: 0 };
+  }
+  const v = costModel.providers.vertex;
+  const tokens = (q) =>
+    q ? (q.in_tokens / 1e6) * v[q.model].usd_per_m_input + (q.out_tokens / 1e6) * v[q.model].usd_per_m_output : 0;
+  const stillUsd = spec.still ? v[spec.still.model].usd_per_image_1024 * (spec.still.images || 1) : 0;
+  const seconds = spec.clip?.duration_s ?? costModel.hook_duration_by_concept_s[conceptId] ?? 8;
+  const clipUsd = spec.clip ? v[spec.clip.model].usd_per_s * seconds : 0;
+  const q1Usd = tokens(spec.q1);
+  const q2Usd = tokens(spec.q2);
+  // Reroll allowance: one more still + Q1. A second clip is never allowed (index.js).
+  const retryUsd = stillUsd + q1Usd;
+  const totalUsd = stillUsd + q1Usd + clipUsd + q2Usd + retryUsd;
+  return {
+    still_inr: Number((stillUsd * usdInr).toFixed(2)),
+    clip_usd: Number(clipUsd.toFixed(3)),
+    retry_allowance_usd: Number(retryUsd.toFixed(3)),
+    total_usd: Number(totalUsd.toFixed(3)),
+    total_inr: Number((totalUsd * usdInr).toFixed(2)),
+  };
+}
+
+/**
+ * Hook selection. The only node whose output leads to spend, so it carries the full
+ * payload preview: prompts, engine, duration, cost and the truth-lock plan.
+ *
+ * B4 itself is a text call. The money is spent by src/hook, and only after the
+ * pre_generation preflight has passed.
+ *
+ * What the model chooses: the concept, the source photo, the fallback, the reasoning.
+ * What the code fills in: the prompts for reverse_conceal (verbatim from hook-v4.mjs),
+ * the cost (cost-model.json), the disclosure label (rules.json), the truth lock and
+ * the window. Those are either verified or arithmetic, and neither is a model's job.
+ */
+export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicked, paidAllowed }) {
+  return runNode(
+    jobId,
+    "B4",
+    async ({ retryHint }) => {
+      const { json } = await callText({
+        jobId,
+        reelN,
+        stage: `B4:${reelN}`,
+        model: FLASH,
+        prompt: P.b4Prompt(
+          { reelN, truth, persona, assets, alreadyPicked, paidAllowed, market: truth.market, costModel },
+          retryHint,
+        ),
+        temperature: 0.3,
+      });
+      if (!json) throw new Error(`B4:${reelN} returned unparseable JSON`);
+      json.reel_n = reelN;
+
+      const concept = rules.hook_bank.find((h) => h.id === json.concept_id);
+      if (!concept) throw new Error(`unknown concept_id "${json.concept_id}"`);
+      if (alreadyPicked.includes(json.concept_id)) {
+        throw new Error(`concept "${json.concept_id}" was already picked for this job`);
+      }
+      if (concept.restrictions?.includes("never_default")) {
+        throw new Error(`concept "${json.concept_id}" is never_default in rules.json`);
+      }
+
+      /* The path is the concept's, not the model's. rules.json v1.2 deprecated
+         still_then_clip for concealment: generating from a still where the building is
+         hidden made the model invent a different house, twice. */
+      json.generation_path = concept.default_path;
+      /* rules.json reverse_conceal.verified_on is veo-3.1-lite on Vertex, whatever the
+         concept's default_engine says: the fal engines are not wired, and the lastFrame
+         behaviour the path depends on was verified on Veo only. */
+      json.engine = json.generation_path === "free_2p5d" ? "none" : "veo_3_1_lite";
+      if (json.generation_path !== "free_2p5d" && !paidAllowed) {
+        throw new Error(
+          `a paid hook is already planned for this job (cost-model presets.one_paid_hook); pick a free_2p5d concept, not "${json.concept_id}"`,
+        );
+      }
+      if (!["free_2p5d", "reverse_conceal"].includes(json.generation_path)) {
+        throw new Error(`"${json.concept_id}" uses ${json.generation_path}, which has no verified pipeline in D3`);
+      }
+
+      const source = assets.find((a) => a.photo_id === json.source_photo_id);
+      if (!source) throw new Error(`source_photo_id "${json.source_photo_id}" is not in the pool`);
+      json.source_crop_9x16 = json.source_crop_9x16?.x_center != null ? json.source_crop_9x16 : source.safe_crop_9x16;
+
+      if (json.generation_path === "reverse_conceal") {
+        const prompts = hookPrompts(json.concept_id, {
+          roomClass: source.room_class,
+          vehiclesPresent: Boolean(source.flags?.vehicles_present),
+        });
+        json.still_prompt = prompts.still_prompt;
+        json.clip_prompt = prompts.clip_prompt;
+        json.prompt_template = prompts.template;
+        json.prompt_verified = prompts.verified;
+        json.last_frame_still = true;
+        json.reverse_after_generate = true;
+      } else {
+        json.still_prompt = "";
+        json.last_frame_still = null;
+        json.reverse_after_generate = false;
+      }
+      json.negative_prompt = "";
+
+      json.duration_s = costModel.hook_duration_by_concept_s[json.concept_id] ?? 0;
+      json.usable_window_s =
+        json.generation_path === "free_2p5d"
+          ? { start: 0, end: rules.job_defaults.hook_usable_s }
+          : { start: Number((json.duration_s - HOOK_WINDOW_S).toFixed(2)), end: json.duration_s };
+      json.truth_lock = { mode: "crossfade_to_source", frames: rules.job_defaults.truth_lock_frames };
+      json.est_cost = hookEstimate(json.generation_path, json.concept_id);
+      json.disclosure_label =
+        json.generation_path === "free_2p5d"
+          ? ""
+          : rules.required_overlays[truth.market]?.hook_label || "";
+      json.qa_checks = rules.qa_reject_list;
+      json.aspect = "9x16";
+      json.emit_16x9_derivative = true;
+
+      const fallback = rules.hook_bank.find((h) => h.id === json.fallback_concept);
+      if (!fallback || fallback.default_path !== "free_2p5d" || fallback.id === json.concept_id) {
+        // A paid fallback for a paid failure is how a job spends twice for nothing.
+        json.fallback_concept = "blueprint_to_photo";
+      }
+      return json;
+    },
+    { schema: "HookPlan", reelN, model: FLASH, parents: ["B0", "B1", "B2", "B3"] },
   );
 }
 
