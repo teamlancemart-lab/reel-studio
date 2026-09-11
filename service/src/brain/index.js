@@ -35,7 +35,7 @@ import {
 } from "./nodes.js";
 import { runB8 } from "./preflight.js";
 import { buildRecipes, validateRecipe } from "./recipe.js";
-import { jobFlags } from "../jobOptions.js";
+import { jobFlags, reelHookPlan } from "../jobOptions.js";
 
 export function loadTracks() {
   const p = path.join(SERVICE_ROOT, "assets", "music", "tracks.json");
@@ -113,14 +113,14 @@ export async function runBrain(jobId, { resume = false, finish = true } = {}) {
   setStage(jobId, "brain:B3", 0.45);
   const formats = await reuse("B3", () => runB3(jobId, { truth, persona, assets }));
 
-  /* ---- B4, per reel. One paid hook per job at most (cost-model presets.one_paid_hook). */
+  /* ---- B4, per reel. The run controls may fix a concept per reel; a fixed paid concept
+     gets its paid hook. An unfixed reel may only take a paid hook when no other reel has
+     one (cost-model presets.one_paid_hook). Paid hooks need generative on the job. */
   const hooks = [];
   const flags = jobFlags(readJob(jobId));
   for (const entry of formats.reels) {
     const reelN = entry.reel_n;
-    /* Reel 1 carries the run controls' concept. A paid hook is only allowed on a job
-       run with generative on, and at most one per job. */
-    const forcedConcept = reelN === 1 ? flags.hookConcept : null;
+    const { forcedConcept, paidAllowed } = reelHookPlan(flags, reelN, hooks);
     setStage(jobId, `brain:B4:${reelN}`, 0.47 + 0.02 * reelN);
     hooks.push(
       await reuse(`B4:${reelN}`, () =>
@@ -129,7 +129,8 @@ export async function runBrain(jobId, { resume = false, finish = true } = {}) {
           persona,
           assets,
           alreadyPicked: hooks.map((h) => h.concept_id),
-          paidAllowed: flags.paidHook && !hooks.some((h) => h.generation_path !== "free_2p5d"),
+          usedSources: hooks.map((h) => h.source_photo_id),
+          paidAllowed,
           forcedConcept,
         }),
       ),
@@ -178,6 +179,8 @@ export async function runBrain(jobId, { resume = false, finish = true } = {}) {
   const { recipes, notes } = buildRecipes(formats, shotList, copySets, pacings, {
     photoUrl,
     typeVoice: persona.type_voice,
+    facts: job.facts,
+    assets,
   });
 
   const recipeProblems = recipes.flatMap((r) =>
@@ -274,14 +277,15 @@ export async function regenerateNode(jobId, nodeKey) {
         .filter((k) => k.startsWith("B4:") && k !== nodeKey)
         .map((k) => job.nodes[k].payload)
         .filter(Boolean);
-      const flags = jobFlags(job);
+      const { forcedConcept, paidAllowed } = reelHookPlan(jobFlags(job), reelN, others);
       return runB4(jobId, reelN, {
         truth: payloadOf("B1"),
         persona: payloadOf("B2"),
         assets: survivors(),
         alreadyPicked: others.map((h) => h.concept_id),
-        paidAllowed: flags.paidHook && !others.some((h) => h.generation_path !== "free_2p5d"),
-        forcedConcept: reelN === 1 ? flags.hookConcept : null,
+        usedSources: others.map((h) => h.source_photo_id),
+        paidAllowed,
+        forcedConcept,
       });
     }
     case "B5":
@@ -353,9 +357,12 @@ export function rebuildRecipes(jobId) {
     return photo ? `/jobs/${jobId}/file/${encodeURIComponent(photo.storedName)}` : undefined;
   };
 
+  const droppedIds = new Set((job.dedupe?.dropped || []).map((d) => d.photo_id));
   const { recipes, notes } = buildRecipes(formats, shotList, copySets, pacings, {
     photoUrl,
     typeVoice: job.nodes.B2?.payload?.type_voice || "sans_pill",
+    facts: job.facts,
+    assets: (job.nodes.B0?.payload?.assets || []).filter((a) => !droppedIds.has(a.photo_id)),
   });
   const problems = recipes.flatMap((r) => validateRecipe(r).map((p) => `${r.reelId}: ${p}`));
 

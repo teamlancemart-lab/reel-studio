@@ -86,7 +86,12 @@ export default function PipelineView({
       {opts && (
         <p className="mt-2 text-[10px] text-neutral-500">
           run: paid hook {opts.paidHook ? "on" : "off"}
-          {opts.hookConcept ? ` (${opts.hookConcept})` : ""} · interiors {opts.interiorMotion}
+          {opts.hookConcepts?.some(Boolean)
+            ? ` (${opts.hookConcepts.map((c, i) => `reel ${i + 1} ${c ?? "auto"}`).join(", ")})`
+            : opts.hookConcept
+              ? ` (${opts.hookConcept})`
+              : ""}{" "}
+          · interiors {opts.interiorMotion}
           {opts.interiorMotion === "veo" ? ` × ${opts.heroRooms}` : ""} · server GENERATIVE_ENABLED=
           {String(opts.env.GENERATIVE_ENABLED)} INTERIOR_MOTION={opts.env.INTERIOR_MOTION}
           {s.duplicateOf ? ` · duplicate of ${s.duplicateOf.slice(0, 8)} (brain reused, ${s.reusedBrain.length} nodes)` : ""}
@@ -248,7 +253,8 @@ function HookRow({ reelN, summary: s, events, now }: { reelN: number; summary: J
             )}
             <figcaption className={`mt-0.5 text-[10px] ${a.verdict === "approved" ? "text-emerald-300" : "text-rose-300"}`}>
               still {a.attempt}: Q1 {a.verdict}
-              {a.q1.rejects_found.length > 0 && <span className="block text-rose-300/90">{a.q1.rejects_found.join("; ")}</span>}
+              {a.q1 && a.q1.rejects_found.length > 0 && <span className="block text-rose-300/90">{a.q1.rejects_found.join("; ")}</span>}
+              {a.reason && <span className="block text-rose-300/90">{a.reason}</span>}
             </figcaption>
           </figure>
         ))}

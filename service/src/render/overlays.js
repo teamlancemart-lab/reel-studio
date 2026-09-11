@@ -17,7 +17,7 @@ const SCRIPT = path.join(here, "overlays.py");
  * @param recipe   ReelRecipe
  * @param outDir   where the PNGs go
  * @param size     { width, height } of the master
- * @returns [{ id, path, tIn, tOut, fadeS }]
+ * @returns [{ id, path, tIn, tOut, fadeS, fadeInS, fadeOutS }]
  */
 export async function renderOverlays(recipe, outDir, size) {
   const overlays = [];
@@ -32,8 +32,13 @@ export async function renderOverlays(recipe, outDir, size) {
         tIn: o.tIn,
         tOut: o.tOut,
         ...(o.fadeS != null ? { fadeS: o.fadeS } : {}),
+        ...(o.fadeInS != null ? { fadeInS: o.fadeInS } : {}),
+        ...(o.fadeOutS != null ? { fadeOutS: o.fadeOutS } : {}),
+        ...(o.statsLine ? { statsLine: true } : {}),
         // The floor plan draws on paper; white ink would vanish.
         onLight: seg.motion === "self_draw",
+        // A closing card on a real photo gets the over-photo layout, not the flat card's.
+        onPhoto: seg.kind === "cta" && Boolean(seg.source?.id) && !String(seg.source.id).startsWith("card:"),
       });
     });
   });

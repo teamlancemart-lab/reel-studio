@@ -31,12 +31,20 @@ export const WARN_USD = cm.guards.warn_above_usd_per_listing;
 export const BLOCK_USD = cm.guards.block_above_usd_per_listing;
 export const MAX_HERO_ROOMS = rules.interior_motion.max_hero_interiors;
 
+/** service/src/jobOptions.js OFFERED_CONCEPTS, in the same order. */
 export const CONCEPTS = [
   { id: "block_build", name: "Build itself" },
   { id: "helicopter_drape", name: "Helicopter drape" },
+  { id: "haze_reveal", name: "Haze reveal" },
   { id: "sky_drop", name: "Sky drop" },
   { id: "blueprint_to_photo", name: "Blueprint" },
+  { id: "paper_popup_room", name: "Paper pop-up" },
 ].map((c) => ({ ...c, paid: rules.hook_bank.find((h) => h.id === c.id)?.default_path !== "free_2p5d" }));
+
+export const REEL_COUNT = 3;
+/** With the paid hook on, the reference set: build itself, the drape, the haze. */
+export const PAID_DEFAULTS = ["block_build", "helicopter_drape", "haze_reveal"];
+export const isPaidConcept = (id: string | null) => Boolean(id && CONCEPTS.find((c) => c.id === id)?.paid);
 
 export function brainUsd(photoCount: number, reels = 3) {
   return cm.brain_nodes.reduce((sum, n) => {
@@ -66,20 +74,29 @@ export function glidesUsd(count: number) {
 
 export interface RunOptions {
   paidHook: boolean;
-  hookConcept: string;
+  /** One per reel; null lets the brain choose a free hook. */
+  hookConcepts: (string | null)[];
   interiorMotion: "2.5d" | "veo";
   heroRooms: number;
 }
 
-export const DEFAULT_OPTIONS: RunOptions = { paidHook: false, hookConcept: "blueprint_to_photo", interiorMotion: "2.5d", heroRooms: 3 };
+export const DEFAULT_OPTIONS: RunOptions = {
+  paidHook: false,
+  hookConcepts: ["blueprint_to_photo", null, null],
+  interiorMotion: "2.5d",
+  heroRooms: 3,
+};
 
 /** What the service is sent. generative covers both paid steps; paidHook is its own gate. */
 export function toRequestOptions(o: RunOptions) {
-  const conceptPaid = CONCEPTS.find((c) => c.id === o.hookConcept)?.paid ?? false;
+  const hookConcepts = Array.from({ length: REEL_COUNT }, (_, i) => {
+    const c = o.hookConcepts[i] ?? null;
+    return !o.paidHook && isPaidConcept(c) ? null : c;
+  });
   return {
     generative: o.paidHook || o.interiorMotion === "veo",
     paidHook: o.paidHook,
-    hookConcept: !o.paidHook && conceptPaid ? undefined : o.hookConcept,
+    hookConcepts,
     interiorMotion: o.interiorMotion,
     heroRooms: o.interiorMotion === "veo" ? o.heroRooms : 0,
   };
@@ -87,7 +104,15 @@ export function toRequestOptions(o: RunOptions) {
 
 export function estimate(o: RunOptions, photoCount: number) {
   const brain = brainUsd(photoCount);
-  const hook = o.paidHook ? hookUsd(o.hookConcept) : { firstTryUsd: 0, withRerollUsd: 0 };
+  const hook = o.paidHook
+    ? o.hookConcepts.reduce(
+        (sum, c) => {
+          const h = c ? hookUsd(c) : { firstTryUsd: 0, withRerollUsd: 0 };
+          return { firstTryUsd: sum.firstTryUsd + h.firstTryUsd, withRerollUsd: sum.withRerollUsd + h.withRerollUsd };
+        },
+        { firstTryUsd: 0, withRerollUsd: 0 },
+      )
+    : { firstTryUsd: 0, withRerollUsd: 0 };
   const glides = o.interiorMotion === "veo" ? glidesUsd(o.heroRooms) : 0;
   const low = brain + hook.firstTryUsd + glides;
   const high = brain + hook.withRerollUsd + glides;

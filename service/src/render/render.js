@@ -41,8 +41,13 @@ const XFADE_NAME = {
   crossfade: "fade",
   zoom_through: "zoomin",
   whip_blur: "hblur",
-  light_leak: "fadewhite",
+  /* fadewhite put a near-white frame mid-walkthrough; rules.json v1.5 dropped light_leak
+     and an old recipe that still names it gets a plain dissolve. */
+  light_leak: "fade",
 };
+
+/** How dark the closing card's photo goes under the CTA text. */
+const CTA_SCRIM = 0.5;
 
 /* ------------------------------------------------------------------ crop */
 
@@ -135,8 +140,8 @@ async function renderSegment({ seg, duration, sourcePath, out, hookPath, hookSta
     return out;
   }
 
-  // The CTA is a card, not a photo.
-  if (seg.kind === "cta" || !sourcePath) {
+  // A CTA with no photo to sit on is a plain card.
+  if (!sourcePath) {
     await sh([
       "-f", "lavfi",
       "-i", `color=c=0x132038:s=${MW}x${MH}:r=${FPS}:d=${duration}`,
@@ -158,31 +163,16 @@ async function renderSegment({ seg, duration, sourcePath, out, hookPath, hookSta
     return out;
   }
 
-  if (seg.motion === "parallax_lr") {
-    /* Two-layer fake parallax, the same construction the canvas draws: a blurred,
-       wider copy behind and the sharp plate in front, moving the other way. */
-    const inset = Math.round(MW * 0.06);
-    await sh([
-      "-loop", "1", "-t", String(duration), "-i", sourcePath,
-      "-filter_complex",
-      [
-        `[0:v]${base},scale=${Math.round(MW * 1.22)}:-2,crop=${MW}:${MH},gblur=sigma=18,fps=${FPS}[bg]`,
-        `[0:v]${base},scale=${MW - inset * 2}:${MH - inset * 2},fps=${FPS}[fg]`,
-        `[bg][fg]overlay=x='${inset}+(${Math.round(MW * 0.02)}*(t/${duration}-0.5))':y=${inset},format=yuv420p[v]`,
-      ].join(";"),
-      "-map", "[v]",
-      "-frames:v", String(frames),
-      "-an", "-r", String(FPS),
-      out,
-    ]);
-    return out;
-  }
-
+  /* parallax_lr is a full-frame lateral drift at a slight zoom, the same curve as
+     motionAt() in draw.ts. It used to be a two-layer fake parallax (a blurred copy behind
+     an inset plate), which framed every room in a blurry border and read as a photo of a
+     photo. */
   const zoom = {
     push: `min(1+(on/${frames})*0.12,1.12)`,
     pull: `max(1.12-(on/${frames})*0.12,1.0)`,
     pan_l: "1.08",
     pan_r: "1.08",
+    parallax_lr: "1.10",
     static: "1.0",
   }[seg.motion] ?? "1.0";
 
@@ -191,13 +181,16 @@ async function renderSegment({ seg, duration, sourcePath, out, hookPath, hookSta
       ? `(iw-iw/zoom)*(1-on/${frames})`
       : seg.motion === "pan_r"
         ? `(iw-iw/zoom)*(on/${frames})`
-        : "iw/2-(iw/zoom/2)";
+        : seg.motion === "parallax_lr"
+          ? `(iw-iw/zoom)*(0.2+0.6*on/${frames})`
+          : "iw/2-(iw/zoom/2)";
 
+  const scrim = seg.kind === "cta" ? `,drawbox=x=0:y=0:w=iw:h=ih:color=black@${CTA_SCRIM}:t=fill` : "";
   await sh([
     "-loop", "1", "-t", String(duration), "-i", sourcePath,
     "-vf",
     `${base},scale=${MW * 2}:-2,` +
-      `zoompan=z='${zoom}':x='${x}':y='ih/2-(ih/zoom/2)':d=${frames}:s=${MW}x${MH}:fps=${FPS},` +
+      `zoompan=z='${zoom}':x='${x}':y='ih/2-(ih/zoom/2)':d=${frames}:s=${MW}x${MH}:fps=${FPS}${scrim},` +
       `format=yuv420p`,
     "-frames:v", String(frames),
     "-an", "-r", String(FPS),
@@ -372,10 +365,17 @@ export async function renderReel(recipe, opts) {
     const idx = files.length + k;
     const inLabel = `[ov${k}]`;
     const outLabel = k === overlays.length - 1 ? "[vout]" : `[c${k}]`;
-    const fade = Math.min(o.fadeS ?? 0.35, Math.max(0.05, (o.tOut - o.tIn) / 2));
+    /* fadeInS / fadeOutS of 0 switch that edge off: a title carried across the hook and
+       the exterior shot must not dip at the join. */
+    const cap = Math.max(0.05, (o.tOut - o.tIn) / 2);
+    const fadeIn = Math.min(o.fadeInS ?? o.fadeS ?? 0.35, cap);
+    const fadeOut = Math.min(o.fadeOutS ?? o.fadeS ?? 0.35, cap);
+    const fades = [
+      fadeIn > 0 ? `fade=t=in:st=${o.tIn.toFixed(3)}:d=${fadeIn.toFixed(3)}:alpha=1` : null,
+      fadeOut > 0 ? `fade=t=out:st=${(o.tOut - fadeOut).toFixed(3)}:d=${fadeOut.toFixed(3)}:alpha=1` : null,
+    ].filter(Boolean);
     chain.push(
-      `[${idx}:v]format=rgba,fade=t=in:st=${o.tIn.toFixed(3)}:d=${fade.toFixed(3)}:alpha=1,` +
-        `fade=t=out:st=${(o.tOut - fade).toFixed(3)}:d=${fade.toFixed(3)}:alpha=1,` +
+      `[${idx}:v]format=rgba,${fades.length ? `${fades.join(",")},` : ""}` +
         `setpts=PTS-STARTPTS${inLabel}`,
       `${vlabel}${inLabel}overlay=0:0:enable='between(t,${o.tIn.toFixed(3)},${o.tOut.toFixed(3)})'${outLabel}`,
     );

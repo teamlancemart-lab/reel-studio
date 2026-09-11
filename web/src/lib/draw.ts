@@ -70,7 +70,8 @@ export function motionAt(motion: Motion, p: number): MotionState {
     case "pan_r":
       return { zoom: 1.08, panX: lerp(-0.1, 0.1, e), panY: 0 };
     case "parallax_lr":
-      return { zoom: 1.06, panX: lerp(-0.06, 0.06, e), panY: 0 };
+      // Full-frame lateral drift, as service/src/render/render.js draws it.
+      return { zoom: 1.1, panX: lerp(-0.045, 0.045, p), panY: 0 };
     case "self_draw":
       return { zoom: lerp(1.0, 1.06, e), panX: 0, panY: 0 };
     case "static":
@@ -119,32 +120,6 @@ function drawPhotoLayer(
   H: number,
 ) {
   const outAspect = W / H;
-
-  if (motion === "parallax_lr") {
-    // Two-layer fake parallax, the same construction D3 builds in ffmpeg: a blurred,
-    // wider copy behind, the sharp plate in front moving the other way.
-    const back = motionAt("parallax_lr", 1 - p);
-    back.zoom = 1.22;
-    const b = sourceRect(img, crop, outAspect, back);
-    ctx.save();
-    ctx.filter = "blur(10px)";
-    ctx.drawImage(img, b.sx, b.sy, b.sw, b.sh, 0, 0, W, H);
-    ctx.restore();
-
-    const front = motionAt("parallax_lr", p);
-    const f = sourceRect(img, crop, outAspect, front);
-    const inset = W * 0.06;
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(inset, inset, W - inset * 2, H - inset * 2, W * 0.02);
-    ctx.clip();
-    ctx.drawImage(
-      img, f.sx, f.sy, f.sw, f.sh,
-      inset, inset, W - inset * 2, H - inset * 2,
-    );
-    ctx.restore();
-    return;
-  }
 
   const m = motionAt(motion, p);
   const r = sourceRect(img, crop, outAspect, m);
@@ -197,7 +172,10 @@ function drawSelfDraw(
   }
 }
 
-/** The CTA is a card, not a photo. Rendered from facts, no source image. */
+/** How dark the closing card's photo goes under the CTA text (render.js CTA_SCRIM). */
+const CTA_SCRIM = 0.5;
+
+/** A CTA with no aerial or exterior to sit on is a plain card. */
 function drawCtaGround(ctx: CanvasRenderingContext2D, W: number, H: number) {
   ctx.fillStyle = "#132038";
   ctx.fillRect(0, 0, W, H);
@@ -332,6 +310,8 @@ function drawOverlay(
   fonts: { sans: string; serif: string },
   /** The segment underneath is light (floor plan paper), so the ink must be dark. */
   onLight = false,
+  /** A closing card drawn over a real photo rather than the plain card. */
+  onPhoto = false,
 ) {
   const system = TYPE_SYSTEMS[overlay.voice ?? voice];
   const box = safeBox(W, H);
@@ -343,8 +323,9 @@ function drawOverlay(
   const inkTitle = onLight ? "#132038" : "#ffffff";
   const inkSub = onLight ? "rgba(19,32,56,.78)" : "rgba(232,232,238,.94)";
 
-  // Fade in over the first 0.35s of the overlay's own window.
-  const alpha = ease(Math.min(1, (t - overlay.tIn) / 0.35));
+  // Fade in over the overlay's own window; fadeInS 0 means it is already there.
+  const fadeIn = overlay.fadeInS ?? overlay.fadeS ?? 0.35;
+  const alpha = fadeIn > 0 ? ease(Math.min(1, (t - overlay.tIn) / fadeIn)) : 1;
   const rise = lerp(W * 0.02, 0, alpha);
 
   ctx.save();
@@ -359,6 +340,23 @@ function drawOverlay(
 
   const titleCase = casedText(lines[0], system.title_case);
   const track = system.title_case === "caps_small" ? W * 0.006 : 0;
+
+  if (overlay.kind === "title" && overlay.system === "status_card") {
+    drawStatusTitle(ctx, lines, Boolean(overlay.statsLine), W, H, fonts, box);
+    ctx.restore();
+    return;
+  }
+  if (overlay.kind === "caption" && overlay.system === "address_only" && !onLight) {
+    ctx.shadowColor = "transparent";
+    drawSocialCaption(ctx, lines, W, H, fonts, box);
+    ctx.restore();
+    return;
+  }
+  if (overlay.kind === "cta_band" && onPhoto) {
+    drawCtaOverPhoto(ctx, lines, W, H, fonts, box);
+    ctx.restore();
+    return;
+  }
 
   /* Only a cta_band gets the centred treatment. "search_intent" is a legitimate
      title_card_system for a HOOK card ("Homes for sale in Uptown"), and keying on it
@@ -506,6 +504,153 @@ function drawOverlay(
   ctx.restore();
 }
 
+/* ------------------------------------------------------- reference layouts */
+/* The same three layouts as service/src/render/overlays.py: the Foxwood reference title
+   (large serif status, address, beds / baths / area pill), the white social caption box,
+   and the closing text over a darkened aerial. */
+
+function setShadow(ctx: CanvasRenderingContext2D, blur: number, alpha: number) {
+  ctx.shadowColor = `rgba(0,0,0,${alpha})`;
+  ctx.shadowBlur = blur;
+  ctx.shadowOffsetY = 0;
+}
+
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const out: string[] = [];
+  let current = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const trial = current ? `${current} ${word}` : word;
+    if (!current || ctx.measureText(trial).width <= maxWidth) current = trial;
+    else {
+      out.push(current);
+      current = word;
+    }
+  }
+  if (current) out.push(current);
+  return out;
+}
+
+function drawStatusTitle(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  statsLine: boolean,
+  W: number,
+  H: number,
+  fonts: { sans: string; serif: string },
+  box: SafeBox,
+) {
+  const cx = W / 2;
+  const subs = lines.slice(1);
+  const stats = statsLine && subs.length ? subs.pop()! : null;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "center";
+
+  const titlePx = fitPx(ctx, lines[0], W * 0.15, box.width * 0.86, (px) => `500 ${Math.round(px)}px ${fonts.serif}`);
+  const top = H * 0.205;
+  setShadow(ctx, W * 0.024, 0.55);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(lines[0], cx, top);
+  let y = top + titlePx * 1.32;
+
+  for (const sub of subs) {
+    const px = fitPx(ctx, sub, W * 0.04, box.width * 0.92, (p) => `500 ${Math.round(p)}px ${fonts.sans}`);
+    setShadow(ctx, W * 0.012, 0.6);
+    ctx.fillText(sub, cx, y);
+    y += px * 1.9;
+  }
+
+  if (stats) {
+    const px = fitPx(ctx, stats, W * 0.036, box.width * 0.78, (p) => `600 ${Math.round(p)}px ${fonts.sans}`);
+    const w = ctx.measureText(stats).width;
+    const padX = px * 1.1;
+    const padY = px * 0.62;
+    y += px * 0.2;
+    ctx.shadowColor = "transparent";
+    ctx.fillStyle = "rgba(20,22,26,.51)";
+    ctx.beginPath();
+    ctx.roundRect(cx - w / 2 - padX, y - padY, w + padX * 2, px * 1.18 + padY * 2, (px * 1.18 + padY * 2) / 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(stats, cx, y);
+  }
+}
+
+function drawSocialCaption(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  W: number,
+  H: number,
+  fonts: { sans: string; serif: string },
+  box: SafeBox,
+) {
+  const cx = W / 2;
+  const px = W * 0.05;
+  const subPx = W * 0.036;
+  const textW = box.width * 0.8;
+  const rows: { text: string; px: number; font: string; fill: string }[] = [];
+  const titleFont = `600 ${Math.round(px)}px ${fonts.sans}`;
+  const subFont = `500 ${Math.round(subPx)}px ${fonts.sans}`;
+  ctx.font = titleFont;
+  for (const l of wrapLines(ctx, lines[0], textW)) rows.push({ text: l, px, font: titleFont, fill: "#111113" });
+  ctx.font = subFont;
+  for (const extra of lines.slice(1)) {
+    for (const l of wrapLines(ctx, extra, textW)) rows.push({ text: l, px: subPx, font: subFont, fill: "#46464c" });
+  }
+  const gap = 1.28;
+  const blockH = rows.reduce((s, r) => s + r.px * gap, 0) - rows[rows.length - 1].px * (gap - 1);
+  const widest = Math.max(...rows.map((r) => ((ctx.font = r.font), ctx.measureText(r.text).width)));
+  const padX = px * 0.7;
+  const padY = px * 0.5;
+  const top = H * 0.235;
+  ctx.fillStyle = "rgba(255,255,255,.95)";
+  ctx.beginPath();
+  ctx.roundRect(cx - widest / 2 - padX, top - padY, widest + padX * 2, blockH + padY * 2.25, px * 0.55);
+  ctx.fill();
+  ctx.textBaseline = "top";
+  ctx.textAlign = "center";
+  let y = top;
+  for (const r of rows) {
+    ctx.font = r.font;
+    ctx.fillStyle = r.fill;
+    ctx.fillText(r.text, cx, y);
+    y += r.px * gap;
+  }
+}
+
+function drawCtaOverPhoto(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  W: number,
+  H: number,
+  fonts: { sans: string; serif: string },
+  box: SafeBox,
+) {
+  const cx = W / 2;
+  let y = H * 0.36;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  setShadow(ctx, W * 0.016, 0.55);
+  const kicker = fitPx(ctx, lines[0], W * 0.1, box.width * 0.92, (px) => `500 ${Math.round(px)}px ${fonts.serif}`);
+  ctx.fillText(lines[0], cx, y);
+  y += kicker * 1.45;
+  if (lines[1]) {
+    const px = fitPx(ctx, lines[1], W * 0.05, box.width * 0.9, (p) => `600 ${Math.round(p)}px ${fonts.sans}`);
+    ctx.fillText(lines[1], cx, y);
+    y += px * 1.9;
+  }
+  const small = W * 0.03;
+  ctx.font = `500 ${Math.round(small)}px ${fonts.sans}`;
+  ctx.fillStyle = "rgba(232,232,236,.94)";
+  for (const line of lines.slice(2)) {
+    for (const part of wrapLines(ctx, line, box.width * 0.9)) {
+      if (y + small * 1.3 > box.bottom) break;
+      ctx.fillText(part, cx, y);
+      y += small * 1.45;
+    }
+  }
+}
+
 /* ------------------------------------------------------------- segment draw */
 
 function drawSegment(
@@ -524,7 +669,12 @@ function drawSegment(
      card, so white ink is right there and wrong here. */
   const onLight = seg.motion === "self_draw";
 
-  if (seg.kind === "cta") {
+  const onPhoto = seg.kind === "cta" && Boolean(img);
+  if (seg.kind === "cta" && img) {
+    drawPhotoLayer(ctx, img, seg.crop, seg.motion, p, W, H);
+    ctx.fillStyle = `rgba(0,0,0,${CTA_SCRIM})`;
+    ctx.fillRect(0, 0, W, H);
+  } else if (seg.kind === "cta") {
     drawCtaGround(ctx, W, H);
   } else if (seg.motion === "self_draw") {
     drawSelfDraw(ctx, img, p, W, H);
@@ -543,7 +693,7 @@ function drawSegment(
 
   for (const overlay of seg.overlays) {
     if (t < overlay.tIn || t >= overlay.tOut) continue;
-    drawOverlay(ctx, overlay, recipe.typeVoice, t, W, H, opts.fonts, onLight);
+    drawOverlay(ctx, overlay, recipe.typeVoice, t, W, H, opts.fonts, onLight, onPhoto);
   }
 }
 
@@ -592,17 +742,7 @@ export function drawFrame(
     }
     drawSegment(ctx, recipe, seg, t, images, W, H, opts);
     ctx.restore();
-    if (seg.transitionIn === "light_leak") {
-      ctx.save();
-      ctx.globalAlpha = Math.sin(a * Math.PI) * 0.35;
-      const g = ctx.createLinearGradient(0, 0, W, H);
-      g.addColorStop(0, "rgba(255,190,120,0)");
-      g.addColorStop(0.5, "rgba(255,190,120,1)");
-      g.addColorStop(1, "rgba(255,190,120,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, W, H);
-      ctx.restore();
-    }
+    // light_leak (pre rules v1.5) renders as a plain dissolve, as it does in ffmpeg.
   } else {
     drawSegment(ctx, recipe, seg, t, images, W, H, opts);
   }

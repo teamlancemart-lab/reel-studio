@@ -35,12 +35,12 @@ const DIRECTION_TO_MOTION = {
 };
 
 /**
- * rules.json transitions -> the five both renderers implement.
+ * rules.json transitions -> what both renderers implement.
  *
- * Six rules values collapse into five recipe values, so B7 can satisfy
- * no_repeat_consecutive and STILL produce a repeat here: blueprint_wipe followed by
- * light_leak arrives as light_leak followed by light_leak. The rule is re-applied
- * after mapping, below, because this is where the collision is created.
+ * rules.json v1.5 dropped light_leak (it rendered as a near-white flash frame) and
+ * blueprint_wipe (never had a renderer). B7 plans stored before v1.5 can still name
+ * them, so both map to a crossfade — which can create a repeat the plan did not have,
+ * so no_repeat_consecutive is re-applied after mapping, below.
  */
 const TRANSITION_MAP = {
   cut: "cut",
@@ -48,12 +48,16 @@ const TRANSITION_MAP = {
   crossfade: "crossfade",
   zoom_through: "zoom_through",
   whip_blur: "whip_blur",
-  light_leak: "light_leak",
-  blueprint_wipe: "light_leak", // no blueprint wipe in either renderer yet
+  light_leak: "crossfade",
+  blueprint_wipe: "crossfade",
 };
 
 /** Alternatives to fall back on, in order, when the mapping creates a repeat. */
-const TRANSITION_FALLBACKS = ["crossfade", "zoom_through", "light_leak", "cut"];
+const TRANSITION_FALLBACKS = ["crossfade", "zoom_through", "cut"];
+
+/** Room classes a closing card may sit on, best first: the reference reels end on the
+ *  wide aerial, and a CTA over the property reads as the end of a tour, not an ad. */
+const CTA_GROUNDS = ["aerial_wide", "aerial_34", "aerial_topdown", "exterior_front"];
 
 const camelCrop = (c) =>
   c
@@ -78,7 +82,7 @@ const round3 = (n) => Number(n.toFixed(3));
  * @returns { recipes, notes }  notes records every adjustment, never silent
  */
 export function buildRecipes(b3, b5, b6, b7, opts = {}) {
-  const { photoUrl = () => undefined, typeVoice = "sans_pill" } = opts;
+  const { photoUrl = () => undefined, typeVoice = "sans_pill", facts = null, assets = [] } = opts;
   const recipes = [];
   const notes = [];
 
@@ -91,7 +95,7 @@ export function buildRecipes(b3, b5, b6, b7, opts = {}) {
       continue;
     }
 
-    const built = buildOne({ formatEntry, shotList: b5, copy, pacing, photoUrl, typeVoice });
+    const built = buildOne({ formatEntry, shotList: b5, copy, pacing, photoUrl, typeVoice, facts, assets });
     recipes.push(built.recipe);
     notes.push(...built.notes.map((n) => `reel ${reelN}: ${n}`));
   }
@@ -99,7 +103,7 @@ export function buildRecipes(b3, b5, b6, b7, opts = {}) {
   return { recipes, notes };
 }
 
-function buildOne({ formatEntry, shotList, copy, pacing, photoUrl, typeVoice }) {
+function buildOne({ formatEntry, shotList, copy, pacing, photoUrl, typeVoice, facts, assets }) {
   const notes = [];
   const tier = pacing.tier || formatEntry.tier;
   const dropped = new Set(pacing.dropped_shot_ids || []);
@@ -205,19 +209,34 @@ function buildOne({ formatEntry, shotList, copy, pacing, photoUrl, typeVoice }) 
 
   const hookSeg = bySlot("hook") || segments[0];
   if (copy.hook_card) {
-    attach(hookSeg, {
-      kind: "title",
-      system: formatEntry.title_card_system || "status_card",
-      lines: cardLines(copy.hook_card),
-    });
+    const system = formatEntry.title_card_system || "status_card";
+    const lines = cardLines(copy.hook_card);
+    /* status_card is the reference title: status, address, then the beds / baths / area
+       line. That line is the form's own numbers, formatted here rather than written by a
+       model, so it cannot drift from the facts. */
+    const statsLine = system === "status_card" ? factsLine(facts) : null;
+    if (statsLine) lines.push(statsLine);
+    const title = { kind: "title", system, lines, ...(statsLine ? { statsLine: true } : {}) };
+
+    /* The title holds from the reveal through the exterior shot, as in the reference
+       reels, so it is attached to both segments and the join does not fade. */
+    const exteriorSeg = segments[segments.indexOf(hookSeg) + 1];
+    const carries = system === "status_card" && exteriorSeg?.slot === "exterior_title";
+    attach(hookSeg, { ...title, ...(carries ? { fadeOutS: 0 } : {}) });
+    if (carries) {
+      exteriorSeg.overlays.push({ ...title, fadeInS: 0, tIn: exteriorSeg.tIn, tOut: exteriorSeg.tOut });
+    }
   }
 
   /* The subject rides along so CAPTION_SUBJECT_MISMATCH checks what the binder decided,
      not a re-guess from the words. */
   const subjectOf = (card) => (card?.subject ? { subject: card.subject } : {});
 
-  if (copy.proof_card) {
-    attach(bySlot("proof") || bySlot("exterior_title"), {
+  const proofSeg = bySlot("proof") || bySlot("exterior_title");
+  if (copy.proof_card && proofSeg?.overlays.some((o) => o.kind === "title")) {
+    notes.push(`proof_card "${copy.proof_card.title}" dropped: no proof shot, and ${proofSeg.kind} already carries the title card`);
+  } else if (copy.proof_card) {
+    attach(proofSeg, {
       kind: "caption",
       system: "address_only",
       lines: cardLines(copy.proof_card),
@@ -229,6 +248,12 @@ function buildOne({ formatEntry, shotList, copy, pacing, photoUrl, typeVoice }) 
     const seg = byShotId(caption.shot_id);
     if (!seg) {
       notes.push(`fact_caption for unknown shot "${caption.shot_id}" dropped`);
+      continue;
+    }
+    /* A copy set bound before the binder kept captions off exterior_title can still put
+       one under the carried title. Two text blocks on one shot is never the intent. */
+    if (seg.overlays.some((o) => o.kind === "title")) {
+      notes.push(`fact_caption "${caption.title}" dropped: ${seg.kind} at ${seg.tIn}s already carries the title card`);
       continue;
     }
     attach(seg, { kind: "caption", system: "address_only", lines: cardLines(caption), ...subjectOf(caption) });
@@ -248,6 +273,17 @@ function buildOne({ formatEntry, shotList, copy, pacing, photoUrl, typeVoice }) 
   }
 
   const ctaSeg = bySlot("cta_card") || segments[segments.length - 1];
+  if (ctaSeg?.kind === "cta") {
+    const ground = ctaGround(segments, ctaSeg, assets);
+    if (ground) {
+      ctaSeg.source = { type: "photo", id: ground.photo_id, url: photoUrl(ground.photo_id) };
+      ctaSeg.crop = camelCrop(ground.safe_crop_9x16);
+      ctaSeg.motion = "pull";
+      notes.push(`cta_card sits on ${ground.photo_id} (${ground.room_class})`);
+    } else {
+      notes.push("cta_card has no aerial or exterior photo to sit on; it is a plain card");
+    }
+  }
   if (copy.cta_card) {
     attach(ctaSeg, {
       kind: "cta_band",
@@ -285,6 +321,41 @@ function buildOne({ formatEntry, shotList, copy, pacing, photoUrl, typeVoice }) 
   };
 
   return { recipe, notes };
+}
+
+/** "6 Beds · 8 Baths · 13,847 Sq Ft" from the form, or null when the form has none of it. */
+export function factsLine(facts) {
+  if (!facts) return null;
+  const parts = [];
+  const n = (v) => (v == null || v === "" ? null : Number(v));
+  const beds = n(facts.beds);
+  const baths = n(facts.baths);
+  const area = n(facts.area_value);
+  if (beds) parts.push(`${beds} ${beds === 1 ? "Bed" : "Beds"}`);
+  if (baths) parts.push(`${baths} ${baths === 1 ? "Bath" : "Baths"}`);
+  if (area) {
+    const unit = { sqft: "Sq Ft", sqm: "sq m", sqyd: "sq yd" }[facts.area_unit] ?? facts.area_unit ?? "";
+    /* rules.json IN_AREA_BASIS: an area in India says carpet. Elsewhere the number stands. */
+    const basis = facts.market === "in" && facts.area_basis ? ` ${facts.area_basis}` : "";
+    parts.push(`${area.toLocaleString("en-US")} ${unit}${basis}`.trim());
+  }
+  return parts.length ? parts.join("  ·  ") : null;
+}
+
+/**
+ * The photo a closing card sits on: the best aerial or exterior that is not the shot
+ * straight before it (a cut to the same photo reads as a stutter), and one the reel has
+ * not used at all when there is a choice.
+ */
+function ctaGround(segments, ctaSeg, assets) {
+  const i = segments.indexOf(ctaSeg);
+  const previous = segments[i - 1]?.source?.id;
+  const used = new Set(segments.map((s) => s.source?.id));
+  const candidates = assets.filter(
+    (a) => CTA_GROUNDS.includes(a.room_class) && a.photo_id !== previous && !a.flags?.people_present && !a.excluded_reason,
+  );
+  const rank = (a) => CTA_GROUNDS.indexOf(a.room_class) * 2 + (used.has(a.photo_id) ? 1 : 0);
+  return candidates.sort((a, b) => rank(a) - rank(b) || (b.scores?.composition ?? 0) - (a.scores?.composition ?? 0))[0] ?? null;
 }
 
 /**

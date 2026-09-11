@@ -14,11 +14,14 @@ import {
   BLOCK_USD,
   CONCEPTS,
   MAX_HERO_ROOMS,
+  PAID_DEFAULTS,
+  REEL_COUNT,
   WARN_USD,
   estimate,
   glidesUsd,
   hookUsd,
   inr,
+  isPaidConcept,
   type RunOptions,
 } from "@/lib/estimate";
 
@@ -79,39 +82,50 @@ export default function RunControls({ options, onChange, photoCount, onGenerate,
             disabled={!serverPaid}
             onChange={(e) => {
               const paidHook = e.target.checked;
-              const current = CONCEPTS.find((c) => c.id === options.hookConcept);
               set({
                 paidHook,
-                hookConcept: paidHook ? "block_build" : current?.paid ? "blueprint_to_photo" : options.hookConcept,
+                hookConcepts: paidHook
+                  ? [...PAID_DEFAULTS]
+                  : options.hookConcepts.map((c, i) => (isPaidConcept(c) ? (i === 0 ? "blueprint_to_photo" : null) : c)),
               });
             }}
             className="h-4 w-4 accent-amber-400"
           />
         </label>
-        <div className="mt-2 grid grid-cols-2 gap-1.5">
-          {concepts.map((c) => {
-            const cost = hookUsd(c.id);
-            const active = options.hookConcept === c.id;
+        <div className="mt-2 space-y-1.5">
+          {Array.from({ length: REEL_COUNT }, (_, i) => {
+            const value = options.hookConcepts[i] ?? "";
+            const cost = value ? hookUsd(value) : null;
             return (
-              <button
-                key={c.id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => set({ hookConcept: c.id })}
-                className={`rounded-md border px-2 py-1.5 text-left text-[11px] ${
-                  active ? "border-amber-400 bg-amber-400/10 text-amber-200" : "border-neutral-800 text-neutral-300 hover:border-neutral-600"
-                }`}
-              >
-                <span className="block font-medium">{c.name}</span>
-                <span className="text-[10px] text-neutral-500">
-                  {c.paid ? `${inr(cost.firstTryUsd)} – ${inr(cost.withRerollUsd)}` : "free"}
+              <label key={i} className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="w-12 text-neutral-400">Reel {i + 1}</span>
+                <select
+                  aria-label={`Reel ${i + 1} hook`}
+                  value={value}
+                  onChange={(e) => {
+                    const next = [...options.hookConcepts];
+                    next[i] = e.target.value || null;
+                    set({ hookConcepts: next });
+                  }}
+                  className="flex-1 rounded border border-neutral-700 bg-neutral-950 px-1.5 py-1 text-neutral-200"
+                >
+                  <option value="">auto (free)</option>
+                  {concepts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.paid ? " · Veo" : ""}
+                    </option>
+                  ))}
+                </select>
+                <span className="w-24 text-right text-[10px] text-neutral-500">
+                  {cost && cost.firstTryUsd ? `${inr(cost.firstTryUsd)} – ${inr(cost.withRerollUsd)}` : "free"}
                 </span>
-              </button>
+              </label>
             );
           })}
         </div>
         <p className="mt-1.5 text-[10px] text-neutral-500">
-          Reel 1 uses this concept; reels 2 and 3 get free hooks. A paid still that fails QA twice falls back to a free hook.
+          Each Veo hook reveals the real hero photo and ends on it. A still that fails QA twice, or a clip that fails QA, falls back to a free hook.
         </p>
       </div>
 

@@ -76,7 +76,14 @@ function baseUrl() {
    exactly as they do for any other failure. */
 const REQUEST_TIMEOUT_MS = Number(process.env.VERTEX_TIMEOUT_MS || 120_000);
 
-async function post(url, body, { retryOn401 = true } = {}) {
+/* A 429 or 503 is refused before any work is done, so nothing is billed and waiting is
+   the whole fix. On 253 Brindle (2026-09-11) the image model returned 429 "resource
+   exhausted" a few seconds after reel 1's two stills, and reels 2 and 3 ended with no
+   hook at all. Backoff: 8s, 20s, 45s. */
+const BACKOFF_MS = (process.env.VERTEX_BACKOFF_MS || "8000,20000,45000").split(",").map(Number);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function post(url, body, { retryOn401 = true, attempt = 0 } = {}) {
   const token = await getToken();
   const r = await fetch(url, {
     method: "POST",
@@ -87,7 +94,13 @@ async function post(url, body, { retryOn401 = true } = {}) {
   const text = await r.text();
   if (r.status === 401 && retryOn401) {
     invalidateToken();
-    return post(url, body, { retryOn401: false });
+    return post(url, body, { retryOn401: false, attempt });
+  }
+  if ((r.status === 429 || r.status === 503) && attempt < BACKOFF_MS.length) {
+    const wait = BACKOFF_MS[attempt] + Math.round(Math.random() * 2000);
+    console.warn(`Vertex ${r.status} on ${url.split("/models/")[1] ?? url}; retry ${attempt + 1}/${BACKOFF_MS.length} in ${wait}ms`);
+    await sleep(wait);
+    return post(url, body, { retryOn401, attempt: attempt + 1 });
   }
   if (!r.ok) {
     const err = new Error(`Vertex ${r.status} ${url}\n${text.slice(0, 900)}`);
@@ -404,8 +417,11 @@ export async function submitVideo({
 }
 
 /**
- * Polls a Veo operation. No ledger row: submitVideo already recorded the charge.
- * Returns { done, video: {buffer|gcsUri}, raw }.
+ * Polls a Veo operation. submitVideo already recorded the charge, so the only row written
+ * here is a credit: Vertex does not bill a video its safety filter blocked ("You will not
+ * be charged for blocked videos"), and the ledger must not say otherwise.
+ * Returns { done, video: {buffer|gcsUri}, raw }. A blocked video throws with
+ * err.raiFiltered = true.
  */
 export async function pollVideo({
   operationName,
@@ -413,6 +429,10 @@ export async function pollVideo({
   intervalMs = 10_000,
   maxPolls = 90,
   onPoll = null,
+  jobId = null,
+  reelN = null,
+  stage = "clip",
+  durationSeconds = null,
 }) {
   let res;
   for (let i = 0; i < maxPolls; i++) {
@@ -428,9 +448,24 @@ export async function pollVideo({
   }
   const video = res.response?.videos?.[0];
   if (!video) {
-    throw new Error(
-      "Veo returned no video: " + JSON.stringify(res.response).slice(0, 600),
+    const filtered = Number(res.response?.raiMediaFilteredCount || 0) > 0;
+    if (filtered && jobId && durationSeconds) {
+      const { usd } = priceVideo(model, durationSeconds);
+      record(
+        jobId,
+        makeRow({
+          jobId, reelN, stage, provider: "vertex", providerModel: model,
+          units: -durationSeconds, unitType: "seconds", usd: -usd, status: "credit_rai_filtered",
+          note: `blocked by the safety filter, not billed: ${(res.response.raiMediaFilteredReasons || []).join(" ").slice(0, 200)} (${operationName.split("/").pop()})`,
+        }),
+      );
+    }
+    const err = new Error(
+      (filtered ? "Veo safety filter blocked the video (not billed): " : "Veo returned no video: ") +
+        JSON.stringify(res.response).slice(0, 600),
     );
+    err.raiFiltered = filtered;
+    throw err;
   }
   return {
     done: true,

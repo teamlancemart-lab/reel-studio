@@ -28,22 +28,24 @@ const [MW, MH] = rules.job_defaults.master_size_9x16.split("x").map(Number);
 const busy = new Set();
 
 /**
- * @param opts.windowStart   seconds into the reversed clip; null = the tail (retune.mjs)
- * @param opts.windowLength  default HOOK_WINDOW_S (hook-v4.mjs WINDOW_LEN)
+ * @param opts.windowStart   seconds into the reversed clip; null = the hook's own window
+ *                           (rules.json playback), else the tail (retune.mjs)
+ * @param opts.windowLength  null = the hook's own, else HOOK_WINDOW_S (hook-v4.mjs WINDOW_LEN)
+ * @param opts.speed         null = the hook's own playback speed, else 1
  * @param opts.kind          "export" | "retune"
  */
-export async function exportReel(jobId, reelN, { windowStart = null, windowLength = HOOK_WINDOW_S, kind = "export" } = {}) {
+export async function exportReel(jobId, reelN, { windowStart = null, windowLength = null, speed = null, kind = "export" } = {}) {
   const lockKey = `${jobId}:${reelN}`;
   if (busy.has(lockKey)) throw Object.assign(new Error(`reel ${reelN} is already rendering`), { status: 409 });
   busy.add(lockKey);
   try {
-    return await exportInner(jobId, reelN, { windowStart, windowLength, kind });
+    return await exportInner(jobId, reelN, { windowStart, windowLength, speed, kind });
   } finally {
     busy.delete(lockKey);
   }
 }
 
-async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
+async function exportInner(jobId, reelN, { windowStart, windowLength, speed, kind }) {
   const job = readJob(jobId);
   if (!job) throw Object.assign(new Error("no such job"), { status: 404 });
   const hook = job.hooks?.[reelN];
@@ -67,12 +69,14 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
   let lockDoneS;
   let cut = null;
   if (paid) {
+    /* A retune that names only a window start keeps the hook's own length and speed. */
     cut = await cutAndLock({
       forwardPath: hook.forward_path,
       heroPath: hook.hero_path,
       outDir: path.join(vDir, "hook"),
-      windowStart,
-      windowLength,
+      windowStart: windowStart ?? hook.window_start_s ?? null,
+      windowLength: windowLength ?? hook.window_length_s ?? HOOK_WINDOW_S,
+      speed: speed ?? hook.playback_speed ?? 1,
       frames: hook.truth_lock_frames ?? rules.job_defaults.truth_lock_frames,
     });
     hookClip = cut.lockedPath;
@@ -242,6 +246,7 @@ async function exportInner(jobId, reelN, { windowStart, windowLength, kind }) {
       fell_back: hook.fell_back,
       window_start_s: cut ? Number(cut.windowStart.toFixed(3)) : null,
       window_length_s: cut ? Number(cut.windowLength.toFixed(3)) : null,
+      playback_speed: cut ? cut.speed : null,
       reversed_duration_s: cut ? Number(cut.reversedDuration.toFixed(3)) : null,
       clip_start_in_slot_s: Number(hookStartS.toFixed(3)),
     },
