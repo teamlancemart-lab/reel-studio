@@ -18,6 +18,7 @@ import HookPanel from "@/components/HookPanel";
 import RunControls from "@/components/RunControls";
 import JobView from "@/components/JobView";
 import JobHistory from "@/components/JobHistory";
+import AccessKeyField from "@/components/AccessKeyField";
 import { submitJob } from "@/lib/service";
 import { DEFAULT_OPTIONS, toRequestOptions, type RunOptions } from "@/lib/estimate";
 import { MIN_PHOTOS } from "@/lib/photos";
@@ -184,7 +185,8 @@ function Studio() {
               {jobId ? ` · job ${jobId.slice(0, 8)}` : ""}
             </p>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <AccessKeyField />
             <select
               value={tier}
               onChange={(e) => setTier(e.target.value as Tier)}

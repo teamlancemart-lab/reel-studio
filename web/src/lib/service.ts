@@ -7,6 +7,7 @@
 import type { StudioPhoto } from "./photos";
 import type { Facts } from "./stub-recipe";
 import { toServiceFacts } from "./facts";
+import { writeHeaders } from "./access";
 
 export const SERVICE_URL = (
   process.env.NEXT_PUBLIC_SERVICE_URL || "http://localhost:8080"
@@ -23,6 +24,7 @@ export interface HealthReport {
   fonts: { ok: boolean; present: string[]; missing: string[] };
   vertex: { generativeEnabled: boolean; credentialsConfigured: boolean };
   interiorMotion?: "2.5d" | "veo";
+  accessKeyRequired?: boolean;
 }
 
 export async function getHealth(signal?: AbortSignal): Promise<HealthReport> {
@@ -54,7 +56,7 @@ export async function submitJob(photos: StudioPhoto[], facts: Facts, options?: R
   form.append("buckets", JSON.stringify(buckets));
   if (options) form.append("options", JSON.stringify(options));
 
-  const res = await fetch(`${SERVICE_URL}/jobs`, { method: "POST", body: form });
+  const res = await fetch(`${SERVICE_URL}/jobs`, { method: "POST", body: form, headers: writeHeaders() });
   const body = await res.json();
   if (!res.ok) throw new Error(body?.error || `jobs ${res.status}`);
   return body as { jobId: string; photoCount: number };

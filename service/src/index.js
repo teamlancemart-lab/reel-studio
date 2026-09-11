@@ -7,6 +7,9 @@
  *   GET  /jobs/:id                full job JSON
  *   GET  /jobs/:id/events         SSE: stage, progress, node payloads, ledger, artefacts
  *   GET  /jobs/:id/file/:name     streams an artefact
+ *   POST /archive                 import surviving files as an archived job (archive.js)
+ *
+ * With STUDIO_ACCESS_KEY set, every non-GET request needs the x-studio-key header.
  *
  * D3:
  *   GET  /jobs/:id/hooks                       hook cards: plan, preflight, hook, versions
@@ -50,6 +53,8 @@ import { buildHook } from "./hook/index.js";
 import { exportReel } from "./render/export.js";
 import { buildGlides, selectHeroInteriors, glideEstimate } from "./interiors/glide.js";
 import { jobFlags, parseOptions, resolveOptions } from "./jobOptions.js";
+import { accessMiddleware } from "./lib/access.js";
+import { mountArchive } from "./archive.js";
 
 /** Which schema an edited payload is validated against, by node. */
 const SCHEMA_BY_NODE = {
@@ -68,7 +73,17 @@ const app = express();
 app.disable("x-powered-by");
 
 app.use(corsMiddleware(config.allowedOrigin));
+app.use(accessMiddleware(config.accessKey));
 app.use(express.json({ limit: "2mb" }));
+
+/** An archived job is a record, not a run: it can be read and duplicated, nothing else. */
+app.use("/jobs/:id", (req, res, next) => {
+  if (req.method === "GET" || req.method === "OPTIONS" || req.path === "/duplicate" || !req.params.id) return next();
+  if (readJob(req.params.id)?.status === "archived") {
+    return res.status(409).json({ error: "archived job: duplicate it to run this listing again" });
+  }
+  next();
+});
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -94,6 +109,7 @@ app.get("/health", async (_req, res) => {
     fonts,
     vertex: vertexStatus(),
     interiorMotion: config.interiorMotion,
+    accessKeyRequired: Boolean(config.accessKey),
   });
 });
 
@@ -211,6 +227,7 @@ app.get("/jobs", (_req, res) => {
         reels: Object.keys(j.reels || {}).length,
         failureReason: j.failureReason ?? null,
         ledger: ledgerTotals(j.ledger),
+        archived: j.archived ? { items: j.archived.items.length, lost: j.archived.lost.length } : null,
       })),
   );
 });
@@ -381,6 +398,7 @@ app.get("/jobs/:id/summary", (req, res) => {
     reels: Object.fromEntries(Object.entries(job.reels || {}).map(([n, r]) => [n, r.versions])),
     recipes: (job.recipes || []).map((r) => ({ reelId: r.reelId, tier: r.tier, durationS: r.durationS })),
     runIssues: job.run_issues ?? [],
+    archived: job.archived ?? null,
     ledger: job.ledger,
     ledgerTotals: ledgerTotals(job.ledger),
     guards: {
@@ -489,13 +507,14 @@ app.post("/jobs/:id/reels/:reelN/export", async (req, res) => {
 });
 
 app.post("/jobs/:id/retune", async (req, res) => {
-  const { reelN, windowStart = null, windowLength } = req.body || {};
+  const { reelN, windowStart = null, windowLength, speed } = req.body || {};
   if (!reelN) return res.status(400).json({ error: "reelN is required" });
   try {
     const record = await exportReel(req.params.id, Number(reelN), {
       kind: "retune",
       windowStart: windowStart == null ? null : Number(windowStart),
       ...(windowLength != null ? { windowLength: Number(windowLength) } : {}),
+      ...(speed != null ? { speed: Number(speed) } : {}),
     });
     res.json({ ok: true, free: record.ledger.new_rows === 0, version: record });
   } catch (err) {
@@ -566,7 +585,7 @@ app.get("/jobs/:id/events", (req, res) => {
   const from = Number(req.query.from ?? 0);
   for (const event of job.events.slice(from)) send(event);
 
-  if (job.status === "completed" || job.status === "failed") {
+  if (job.status === "completed" || job.status === "failed" || job.status === "archived") {
     send({ type: "eof", at: new Date().toISOString() });
     return res.end();
   }
@@ -611,6 +630,8 @@ app.get("/jobs/:id/file/:name", (req, res) => {
 });
 
 /* ------------------------------------------------------------------ boot */
+
+mountArchive(app);
 
 app.use((req, res) => res.status(404).json({ error: `no route ${req.method} ${req.path}` }));
 

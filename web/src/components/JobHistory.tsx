@@ -94,18 +94,21 @@ export default function JobHistory({ currentJobId, options, onOpen, refreshKey }
               <button onClick={() => onOpen(j.jobId)} className="min-w-0 truncate text-left font-mono text-amber-400 hover:underline">
                 {j.jobId.slice(0, 8)}
               </button>
-              <span className={j.status === "failed" ? "text-rose-300" : j.status === "completed" ? "text-emerald-300" : "text-amber-300"}>
+              <span className={j.status === "failed" ? "text-rose-300" : j.status === "completed" ? "text-emerald-300" : j.status === "archived" ? "text-sky-300" : "text-amber-300"}>
                 {j.status}
               </span>
             </div>
             <p className="truncate text-neutral-400">{j.address ?? "—"}</p>
             <p className="text-[10px] text-neutral-500">
-              {new Date(j.createdAt).toLocaleString()} · {j.photoCount} photos · {j.reels} reels · {fmtInr(j.ledger.inr)}
+              {new Date(j.createdAt).toLocaleString()} · {j.photoCount} photos ·{" "}
+              {j.archived ? `${j.archived.items} saved files · ${j.archived.lost} lost runs` : `${j.reels} reels · ${fmtInr(j.ledger.inr)}`}
             </p>
             <p className="text-[10px] text-neutral-500">
               {j.options
-                ? `paid hook ${j.options.paidHook ? `on (${j.options.hookConcept ?? "auto"})` : "off"} · interiors ${j.options.interiorMotion}${j.options.interiorMotion === "veo" ? ` × ${j.options.heroRooms}` : ""}`
-                : "no run options (created before the dashboard)"}
+                ? `paid hook ${j.options.paidHook ? `on (${(j.options.hookConcepts ?? [j.options.hookConcept]).map((c) => c ?? "auto").join(", ")})` : "off"} · interiors ${j.options.interiorMotion}${j.options.interiorMotion === "veo" ? ` × ${j.options.heroRooms}` : ""}`
+                : j.archived
+                  ? "archived: made before the service kept its jobs"
+                  : "no run options (created before the dashboard)"}
               {j.duplicateOf ? ` · dup of ${j.duplicateOf.slice(0, 8)}` : ""}
             </p>
             <button

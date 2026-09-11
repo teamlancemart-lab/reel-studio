@@ -11,6 +11,7 @@ import { streamJob, type JobEvent } from "@/lib/service";
 import { getSummary, resumeJob, type JobSummary } from "@/lib/jobs";
 import PipelineView from "./PipelineView";
 import ResultsView from "./ResultsView";
+import ArchiveView from "./ArchiveView";
 
 export interface SlimEvent {
   seq: number;
@@ -88,6 +89,8 @@ export default function JobView({ jobId, onFinished }: { jobId: string; onFinish
       </section>
     );
   }
+
+  if (summary.archived) return <ArchiveView summary={summary} />;
 
   return (
     <div className="space-y-4">
