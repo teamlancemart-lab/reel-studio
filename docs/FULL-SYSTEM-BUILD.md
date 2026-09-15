@@ -262,7 +262,7 @@ New Project → Deploy from GitHub → `reel-studio`.
 
 Variables:
 ```
-GCP_PROJECT_ID=project-d3d22f78-b82e-43b5-b06
+GCP_PROJECT_ID=<your-gcp-project-id>
 GCP_LOCATION=us-central1
 GCP_SA_JSON_B64=<base64 -i sa.json | tr -d '\n' | pbcopy>
 IMAGE_MODEL=gemini-2.5-flash-image
