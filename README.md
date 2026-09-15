@@ -64,7 +64,7 @@ sed -i.bak -e "s|^GCP_SA_JSON_B64=.*|GCP_SA_JSON_B64=$KEY|" \
 cd service
 npm install
 npm run fonts                                   # Inter, Playfair Display, Great Vibes
-python3 -m venv .venv && .venv/bin/pip install Pillow==11.0.0
+python3 -m venv .venv && .venv/bin/pip install "Pillow>=11"
 npm run dev                                     # loads ../.env
 ```
 
@@ -79,8 +79,14 @@ npm run dev                                     # http://localhost:3000
 ```
 
 Check it: `curl http://localhost:8080/health` should return `"ok":true` with ffmpeg,
-python/Pillow and fonts all `"ok":true`. Before pushing web changes run
+python/Pillow and fonts all `"ok":true`. The dashboard header should read
+"paid calls OFF (kill switch) · interiors 2.5d". Before pushing web changes run
 `npm run typecheck && npm run lint && npm run build` in `web/`.
+
+Notes: the container pins Pillow 11.0.0 on Python 3.11. Recent Pythons (3.13+) have no
+11.0.0 wheel, so locally take any Pillow 11 or newer; the overlays render the same on
+12.3. `npm install` in `web/` may print an `allow-scripts` warning for `unrs-resolver`;
+it is harmless.
 
 Local runs are free until you choose otherwise. `.env` ships with
 `GENERATIVE_ENABLED=false`, which blocks every Veo call whatever the job asks for. The brain
