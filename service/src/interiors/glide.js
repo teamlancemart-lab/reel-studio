@@ -135,7 +135,12 @@ async function buildOne(jobId, hero) {
     personGeneration: "dont_allow",
   });
   emit(jobId, "interior", { photoId: hero.photo_id, step: "submitted", op: submit.operationName.split("/").pop() });
-  const { video } = await pollVideo({ operationName: submit.operationName });
+  const { video } = await pollVideo({
+    operationName: submit.operationName,
+    jobId,
+    stage: `IM:${hero.photo_id}`,
+    durationSeconds: submit.durationSeconds,
+  });
   if (!video.buffer) throw new Error(`Veo returned a gcsUri (${video.gcsUri}); no bucket wiring`);
   const clip = path.join(dir, "glide.mp4");
   fs.writeFileSync(clip, video.buffer);

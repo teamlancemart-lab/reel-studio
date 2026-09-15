@@ -62,6 +62,12 @@ const MODE = {
     shape: "does the slab sit on the same footprint as the building in image 1 (same width, same position against the neighbours)?",
     clip: "it is a construction time-lapse: it starts on the bare lot or slab, the MAIN BUILDING rises, and the clip ends on the complete building",
     midFrames: "partly built (slab, framing, walls without roof)",
+    /* On 253 Brindle Q1 rejected a clean empty-lot still because "the driveway, shrubs and
+       grass on the right changed": the apron and lawn the garage used to stand on and
+       hide. Removing a building has to show the ground it covered. Changes outside that
+       strip still reject. */
+    footprint:
+      "The ground the main building stood on or hid from view (its slab, and the paving, lawn or planting directly behind it or along its walls and under its roof overhang) is necessarily new in the generated image. That is part of the removal: do not report it in scene_changes. Report every change outside that strip.",
   },
 };
 const modeOf = (concept) => MODE[concept?.conceal_mode] || MODE.cover;
@@ -73,7 +79,7 @@ function sharedRules(concept) {
 - ${modeOf(concept).target}
 - Counting: ${rules.qa_rules.count_tolerance} Make every count in THIS reply only.
 - Scene elements that must not be added or removed: ${j([...rules.qa_rules.scene_elements, "shrubs", "signs", "street furniture"])}.
-- Look region by region (left, centre, right; sky, building, ground level) and report every element that appears, disappears, moves or changes shape between the reference and the generated image(s) in scene_changes, except the theatrical object itself.
+- Look region by region (left, centre, right; sky, building, ground level) and report every element that appears, disappears, moves or changes shape between the reference and the generated image(s) in scene_changes, except the theatrical object itself.${modeOf(concept).footprint ? `\n- ${modeOf(concept).footprint}` : ""}
 - rejects_found holds CODES only, chosen from: ${j([...REJECT_CODES, ...Object.keys(QA_EXTRA_CODES)])}.`;
 }
 

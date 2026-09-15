@@ -117,6 +117,10 @@ export async function generateClip({ jobId, reelN, plan, heroPath, stillPath, wo
 
   const { video } = await pollVideo({
     operationName: submit.operationName,
+    jobId,
+    reelN,
+    stage: `H2:${reelN}`,
+    durationSeconds: submit.durationSeconds,
     onPoll: (n, done) => emit(jobId, "hook", { reelN, step: "H2 poll", poll: n, done }),
   });
   if (!video.buffer) {
@@ -134,8 +138,10 @@ export async function generateClip({ jobId, reelN, plan, heroPath, stillPath, wo
  * Reverse, cut, truth lock. ffmpeg only. Called by the first build AND by every retune.
  *
  * @param windowStart  null = retune.mjs default, duration - windowLength
+ * @param speed        playback rate of the window (rules.json hook_bank playback). 2.5
+ *                     plays an 8s build in 3.2s; the truth lock is applied after, at 1x.
  * @returns { reversedPath, cutPath, lockedPath, reversedDuration, windowStart,
- *            windowLength, lockAtS, lockDoneS, frames, durationS }
+ *            windowLength, speed, lockAtS, lockDoneS, frames, durationS }
  */
 export async function cutAndLock({
   forwardPath,
@@ -143,8 +149,10 @@ export async function cutAndLock({
   outDir,
   windowStart = null,
   windowLength = HOOK_WINDOW_S,
+  speed = 1,
   frames = rules.job_defaults.truth_lock_frames,
 }) {
+  const rate = Math.max(0.25, Math.min(4, Number(speed) || 1));
   fs.mkdirSync(outDir, { recursive: true });
 
   // 5. reverse, fps 30  (v4: -vf "reverse,fps=30" -an)
@@ -161,6 +169,7 @@ export async function cutAndLock({
     "-y", "-v", "error",
     "-ss", start.toFixed(3), "-t", len.toFixed(3),
     "-i", reversedPath,
+    ...(rate !== 1 ? ["-vf", `setpts=(PTS-STARTPTS)/${rate.toFixed(4)},fps=${FPS}`] : []),
     "-an", "-r", String(FPS),
     cutPath,
   ]);
@@ -198,6 +207,7 @@ export async function cutAndLock({
     reversedDuration,
     windowStart: start,
     windowLength: len,
+    speed: rate,
     lockAtS,
     lockDoneS: lockAtS + fadeS,
     frames,

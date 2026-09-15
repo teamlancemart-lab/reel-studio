@@ -85,6 +85,14 @@ export interface Overlay {
   tOut: number;
   /** Defaults to the recipe's typeVoice when absent. */
   voice?: TypeVoice;
+  /** Fade lengths in seconds; 0 switches that edge off (a title carried across a cut). */
+  fadeS?: number;
+  fadeInS?: number;
+  fadeOutS?: number;
+  /** status_card: the last line is the form's beds / baths / area, drawn on a pill. */
+  statsLine?: boolean;
+  /** Set by the binder: the room family a caption is about. */
+  subject?: string;
 }
 
 export interface Segment {

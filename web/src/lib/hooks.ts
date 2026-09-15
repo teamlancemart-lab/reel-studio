@@ -7,6 +7,7 @@
  * pre_generation preflight that disables the button while anything BLOCKs.
  */
 import { SERVICE_URL } from "./service";
+import { writeHeaders } from "./access";
 
 export interface PreflightRow {
   rule_id: string;
@@ -51,7 +52,8 @@ export interface HookRecord {
   generation_path: string;
   fell_back: boolean;
   fallback_reason: string | null;
-  attempts: { attempt: number; verdict: string; still_file?: string | null; q1: QAResult }[];
+  /** verdict "error": the still or Q1 call failed; q1 is null and reason says why. */
+  attempts: { attempt: number; verdict: string; still_file?: string | null; q1: QAResult | null; reason?: string }[];
   q2: QAResult | null;
   reversed_duration_s?: number;
   window_start_s?: number;
@@ -115,12 +117,12 @@ export async function getHooks(jobId: string): Promise<HooksResponse> {
 }
 
 export async function generateHook(jobId: string, reelN: number) {
-  return json(await fetch(`${SERVICE_URL}/jobs/${jobId}/hooks/${reelN}/generate`, { method: "POST" }));
+  return json(await fetch(`${SERVICE_URL}/jobs/${jobId}/hooks/${reelN}/generate`, { method: "POST", headers: writeHeaders() }));
 }
 
 export async function exportReel(jobId: string, reelN: number) {
   return json<{ version: ReelVersion }>(
-    await fetch(`${SERVICE_URL}/jobs/${jobId}/reels/${reelN}/export`, { method: "POST" }),
+    await fetch(`${SERVICE_URL}/jobs/${jobId}/reels/${reelN}/export`, { method: "POST", headers: writeHeaders() }),
   );
 }
 
@@ -128,7 +130,7 @@ export async function retuneReel(jobId: string, reelN: number, windowStart: numb
   return json<{ free: boolean; version: ReelVersion }>(
     await fetch(`${SERVICE_URL}/jobs/${jobId}/retune`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ reelN, windowStart, windowLength }),
     }),
   );
@@ -160,5 +162,5 @@ export async function getInteriors(jobId: string): Promise<InteriorsResponse> {
 }
 
 export async function generateGlides(jobId: string) {
-  return json(await fetch(`${SERVICE_URL}/jobs/${jobId}/interiors/generate`, { method: "POST" }));
+  return json(await fetch(`${SERVICE_URL}/jobs/${jobId}/interiors/generate`, { method: "POST", headers: writeHeaders() }));
 }

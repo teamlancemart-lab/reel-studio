@@ -110,8 +110,18 @@ const HOSTS = {
 };
 export const hostsFor = (subject) => HOSTS[subject] ?? [subject];
 
+/* A room the classifier has no class for (a media room, a wine cellar) is room_class
+   "other", which has no family. A caption sourced from an observed item on that photo is
+   about that photo and nothing else: its subject is "photo:<id>" and only that photo's
+   shot may carry it. On 253 Brindle the 12-person media room lost every caption. */
+const PHOTO_SUBJECT = "photo:";
+const photoSubject = (subject) => (String(subject ?? "").startsWith(PHOTO_SUBJECT) ? subject.slice(PHOTO_SUBJECT.length) : null);
+
 /** Title before subtitle, first match wins, most specific rooms first. */
 const TEXT_SUBJECTS = [
+  /* First: a media room has a bar fridge and cabinets, and B0 lists them, so the kitchen
+     pattern claimed 253 Brindle's theatre when it came second. */
+  ["media", /\b(media rooms?|home theat(er|re)s?|theat(er|re) (rooms?|seating)|screening rooms?|cinema)\b/i],
   ["kitchen", /\b(kitchens?|island|pantry|stove|range hood|cabinet(ry|s)?|counter ?tops?|dishwasher|refrigerator|fridge)\b/i],
   ["bathroom", /\b(bath ?rooms?|baths?|shower|tubs?|vanity|powder room|toilet)\b/i],
   ["bedroom", /\b(bed ?rooms?|primary suite|master suite|closets?|wardrobes?)\b/i],
@@ -150,7 +160,8 @@ export function subjectOf(card, { truth, assetsById }) {
         const o = truth.observed.find((x) => x.id === src.id);
         const rc = o && assetsById[o.photo_id]?.room_class;
         const fam = rc && ROOM_FAMILY[rc];
-        return fam ? { subject: fam, via: `observed ${src.id} is photo ${o.photo_id} (${rc})` } : null;
+        if (fam) return { subject: fam, via: `observed ${src.id} is photo ${o.photo_id} (${rc})` };
+        return rc ? { subject: `${PHOTO_SUBJECT}${o.photo_id}`, via: `observed ${src.id} is photo ${o.photo_id} (${rc}, no room family)` } : null;
       }
       case "special": {
         const sp = truth.specials.find((x) => x.id === src.id);
@@ -183,8 +194,9 @@ export function subjectOf(card, { truth, assetsById }) {
 /* ---------------------------------------------------------------- binding */
 
 /** Slots that never carry a fact caption: the hook has its title card, the CTA its band,
- *  and the plan its own floor_plan_card. */
-const NO_FACT_SLOTS = new Set(["hook", "cta_card", "floor_plan"]);
+ *  and the plan its own floor_plan_card. exterior_title carries the status title on from
+ *  the hook (rules.json v1.5 reference layout), so a caption there sat on top of it. */
+const NO_FACT_SLOTS = new Set(["hook", "exterior_title", "cta_card", "floor_plan"]);
 
 /**
  * B6 post-process. Every proof card and fact caption ends on a shot of its own room,
@@ -199,8 +211,15 @@ const NO_FACT_SLOTS = new Set(["hook", "cta_card", "floor_plan"]);
  */
 export function bindCaptions(copy, { truth, shots, assetsById }) {
   const roomOf = (shot) => assetsById[shot?.photo_id]?.room_class ?? shot?.room_class ?? null;
-  const famOf = (shot) => ROOM_FAMILY[roomOf(shot)] ?? null;
-  const fits = (subject, shot) => Boolean(shot) && hostsFor(subject).includes(famOf(shot));
+  /* A room with no class ("other") takes its family from what B0 saw in it: a photo whose
+     features are "home theater seating, bar" hosts a media room caption. */
+  const famOf = (shot) =>
+    ROOM_FAMILY[roomOf(shot)] ?? subjectFromText((assetsById[shot?.photo_id]?.features || []).join(", ")) ?? null;
+  const fits = (subject, shot) => {
+    if (!shot) return false;
+    const photo = photoSubject(subject);
+    return photo ? shot.photo_id === photo : hostsFor(subject).includes(famOf(shot));
+  };
   const byId = new Map(shots.map((s) => [s.shot_id, s]));
   const proofShot = shots.find((s) => s.slot === "proof") || shots.find((s) => s.slot === "exterior_title");
 
@@ -273,7 +292,7 @@ export function bindCaptions(copy, { truth, shots, assetsById }) {
     );
     if (!host) {
       record(item, "dropped", {
-        reason: `no free shot of ${hostsFor(item.subject.subject).join("/")} in this reel; ${
+        reason: `no free shot of ${photoSubject(item.subject.subject) ?? hostsFor(item.subject.subject).join("/")} in this reel; ${
           item.shot ? `it was on ${item.shot.shot_id} (${roomOf(item.shot)})` : "its shot_id does not exist"
         }`,
       });
@@ -290,6 +309,83 @@ export function bindCaptions(copy, { truth, shots, assetsById }) {
   copy.fact_captions = keptFacts;
   copy.caption_binding = binding;
   return { copy, binding };
+}
+
+/* ------------------------------------------------------------ card shape */
+
+const TITLE_MAX = 40;
+const SUBTITLE_MAX = 70;
+/** Tokens that stay capitals when shouting copy is re-cased. */
+const KEEP_CAPS = new Set(["PA", "NY", "NJ", "CA", "TX", "FL", "US", "USA", "MLS", "HOA", "EHO", "TV", "AC", "HVAC", "EV", "II", "III"]);
+const SHOUTING = (t) => {
+  const letters = String(t ?? "").replace(/[^A-Za-z]/g, "");
+  return letters.length >= 4 && letters === letters.toUpperCase();
+};
+const keepToken = (word, recased) => (KEEP_CAPS.has(word.replace(/[^A-Za-z]/g, "")) ? word : recased);
+
+const SMALL_WORDS = new Set(["a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "by", "with"]);
+function titleCase(text) {
+  let first = true;
+  return text.replace(/[A-Za-z][A-Za-z']*/g, (w) => {
+    const lower = w.toLowerCase();
+    const out = !first && SMALL_WORDS.has(lower) ? lower : w[0].toUpperCase() + w.slice(1).toLowerCase();
+    first = false;
+    return keepToken(w, out);
+  });
+}
+function sentenceCase(text) {
+  const lower = text.replace(/[A-Za-z][A-Za-z']*/g, (w) => keepToken(w, w.toLowerCase()));
+  return lower.replace(/(^|[.?]\s+)([a-z])/g, (_, lead, c) => lead + c.toUpperCase());
+}
+
+/**
+ * B6 post-process, before the schema check. Two things the model does that make a reel
+ * look wrong or fail for nothing:
+ *   - ALL CAPS copy. The serif_smallcaps voice made B6 shout every card; the renderer
+ *     applies small caps where a layout wants them, so the stored copy is normal case.
+ *   - a title one character over 40. "What $1,875,000 gets you in Mechanicsburg" is the
+ *     number_first template filled in, 41 characters, and it failed B6 twice. The words
+ *     past the limit move to the subtitle, whole, and the move is recorded.
+ * Mutates copy; returns what changed.
+ */
+export function shapeCards(copy) {
+  const changes = [];
+  const cards = [
+    ["hook_card", copy.hook_card, titleCase],
+    ["proof_card", copy.proof_card, sentenceCase],
+    ["floor_plan_card", copy.floor_plan_card, sentenceCase],
+    ["cta_card", copy.cta_card, sentenceCase],
+    ...(copy.fact_captions || []).map((c, i) => [`fact_captions[${i}]`, c, sentenceCase]),
+  ].filter(([, c]) => c);
+
+  for (const [name, card, recase] of cards) {
+    for (const field of ["title", "subtitle"]) {
+      if (!card[field] || !SHOUTING(card[field])) continue;
+      const before = card[field];
+      // An address is a name: Title Case whatever card it sits on.
+      const isName = name === "hook_card" || (name === "cta_card" && field === "subtitle");
+      card[field] = isName ? titleCase(before) : recase(before);
+      changes.push(`${name}.${field} re-cased "${before}" -> "${card[field]}"`);
+    }
+    if (card.title && card.title.length > TITLE_MAX) {
+      const before = card.title;
+      /* A sentence break inside the limit reads better than a word break: "Two kitchens."
+         over "Nobody fights over the stove.", not "...over the" over "stove.". */
+      const sentence = Math.max(before.lastIndexOf(". ", TITLE_MAX), before.lastIndexOf("? ", TITLE_MAX));
+      const cut = sentence > 0 ? sentence + 1 : before.lastIndexOf(" ", TITLE_MAX);
+      if (cut > 0) {
+        card.title = before.slice(0, cut).replace(/[,;:]$/, "");
+        const rest = before.slice(cut + 1);
+        card.subtitle = card.subtitle ? `${rest} ${card.subtitle}` : rest;
+        changes.push(`${name}.title over ${TITLE_MAX} chars: "${rest}" moved to the subtitle`);
+      }
+    }
+    if (card.subtitle && card.subtitle.length > SUBTITLE_MAX) {
+      changes.push(`${name}.subtitle is ${card.subtitle.length} chars, over ${SUBTITLE_MAX}; left for the schema check`);
+    }
+  }
+  if (changes.length) copy.card_shaping = changes;
+  return changes;
 }
 
 /** Every string in a CopySet a viewer could read, with where it lives. */

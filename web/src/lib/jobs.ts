@@ -3,6 +3,7 @@
  * pure function of GET /jobs/:id/summary, re-fetched whenever an SSE event lands.
  */
 import { SERVICE_URL } from "./service";
+import { writeHeaders } from "./access";
 
 export interface LedgerRow {
   stage: string;
@@ -25,9 +26,11 @@ export interface QA {
 
 export interface HookAttempt {
   attempt: number;
-  verdict: "approved" | "rejected";
+  /** "error": the still or its Q1 call failed; q1 is null and reason says why. */
+  verdict: "approved" | "rejected" | "error";
   still_file?: string | null;
-  q1: QA;
+  q1: QA | null;
+  reason?: string;
 }
 
 export interface HookRecord {
@@ -100,8 +103,27 @@ export interface EffectiveOptions {
   interiorMotion: "2.5d" | "veo";
   heroRooms: number;
   hookConcept: string | null;
+  hookConcepts?: (string | null)[];
   notes: string[];
   env: { GENERATIVE_ENABLED: boolean; INTERIOR_MOTION: string };
+}
+
+export interface ArchiveItem {
+  kind: "reel" | "hook_test" | "comparison" | "still_sheet";
+  file: string;
+  title: string;
+  note: string | null;
+  made_at: string | null;
+  bytes: number;
+}
+
+export interface ArchiveRecord {
+  title: string;
+  note: string;
+  imported_at: string;
+  sources: string[];
+  lost: { what: string; why: string }[];
+  items: ArchiveItem[];
 }
 
 export interface JobSummary {
@@ -128,6 +150,8 @@ export interface JobSummary {
   ledger: LedgerRow[];
   ledgerTotals: { rows: number; usd: number; inr: number };
   guards: { warnUsd: number; blockUsd: number; usdInr: number };
+  /** Set on a job imported from surviving files: it has no nodes and no ledger. */
+  archived?: ArchiveRecord | null;
 }
 
 export interface JobListItem {
@@ -143,6 +167,7 @@ export interface JobListItem {
   reels: number;
   failureReason: string | null;
   ledger: { rows: number; usd: number; inr: number };
+  archived?: { items: number; lost: number } | null;
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -163,7 +188,7 @@ export async function duplicateJob(jobId: string, options: Record<string, unknow
   return json<{ jobId: string; reusedBrain: string[] }>(
     await fetch(`${SERVICE_URL}/jobs/${jobId}/duplicate`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ options, reuseBrain }),
     }),
   );
@@ -173,7 +198,7 @@ export async function retune(jobId: string, reelN: number, windowStart: number |
   return json<{ free: boolean; version: Version }>(
     await fetch(`${SERVICE_URL}/jobs/${jobId}/retune`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ reelN, windowStart, windowLength }),
     }),
   );
@@ -183,5 +208,5 @@ export const fmtInr = (n: number) => `₹${n.toFixed(n < 1 ? 3 : 2)}`;
 export const fmtS = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
 
 export async function resumeJob(jobId: string) {
-  return json<{ ok: boolean }>(await fetch(`${SERVICE_URL}/jobs/${jobId}/resume`, { method: "POST" }));
+  return json<{ ok: boolean }>(await fetch(`${SERVICE_URL}/jobs/${jobId}/resume`, { method: "POST", headers: writeHeaders() }));
 }

@@ -17,7 +17,7 @@ import { fitShotsToTier, buildCutMap } from "./fit.js";
 import * as P from "./prompts.js";
 import { reverseConcealPrompts as hookPrompts } from "../hook/prompts.js";
 import { HOOK_WINDOW_S } from "../hook/paid.js";
-import { quarantineDefects, bindCaptions, defectMatch, copyTexts } from "./captions.js";
+import { quarantineDefects, bindCaptions, defectMatch, copyTexts, shapeCards } from "./captions.js";
 
 const FLASH = config.textModel;
 const LITE = config.textLiteModel;
@@ -275,7 +275,7 @@ export function defaultPaidEligible(concept, truth, assets) {
  * the cost (cost-model.json), the disclosure label (rules.json), the truth lock and
  * the window. Those are either verified or arithmetic, and neither is a model's job.
  */
-export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicked, paidAllowed, forcedConcept = null }) {
+export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicked, paidAllowed, forcedConcept = null, usedSources = [] }) {
   return runNode(
     jobId,
     "B4",
@@ -369,8 +369,26 @@ export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicke
       throw new Error(`"${json.concept_id}" uses ${json.generation_path}, which has no verified pipeline in D3`);
     }
 
-    const source = assets.find((a) => a.photo_id === json.source_photo_id);
+    let source = assets.find((a) => a.photo_id === json.source_photo_id);
     if (!source) throw new Error(`source_photo_id "${json.source_photo_id}" is not in the pool`);
+
+    /* A reveal hook reads best from the air: the verified drape (hook-v4) and the
+       Electricity build both open on a 3/4 aerial, and the exterior_title shot that
+       follows is usually the front photo, so a street-level hook cuts to the same frame.
+       On 253 Brindle B4 put build-itself and the haze on the front photo with three
+       clean aerials in the pool. An aerial another reel has not used wins. */
+    if (json.generation_path === "reverse_conceal" && (source.room_class !== "aerial_34" || usedSources.includes(source.photo_id))) {
+      const clean = (a) => a.room_class === "aerial_34" && a.hook_candidate && !a.flags?.people_present;
+      const unused = assets.find((a) => clean(a) && !usedSources.includes(a.photo_id));
+      /* Already on an aerial that another reel uses, with no other aerial: keep it. */
+      const aerial = unused ?? (source.room_class === "aerial_34" ? null : assets.find(clean));
+      if (aerial && aerial.photo_id !== source.photo_id) {
+        json.why = `${json.why ?? ""} Source moved from ${source.photo_id} (${source.room_class}) to aerial ${aerial.photo_id}.`.trim();
+        json.source_photo_id = aerial.photo_id;
+        json.source_crop_9x16 = null;
+        source = aerial;
+      }
+    }
     json.source_crop_9x16 = json.source_crop_9x16?.x_center != null ? json.source_crop_9x16 : source.safe_crop_9x16;
 
     if (json.generation_path === "reverse_conceal") {
@@ -392,10 +410,13 @@ export async function runB4(jobId, reelN, { truth, persona, assets, alreadyPicke
     json.negative_prompt = "";
 
     json.duration_s = costModel.hook_duration_by_concept_s[json.concept_id] ?? 0;
+    const playback = concept.playback;
     json.usable_window_s =
       json.generation_path === "free_2p5d"
         ? { start: 0, end: rules.job_defaults.hook_usable_s }
-        : { start: Number((json.duration_s - HOOK_WINDOW_S).toFixed(2)), end: json.duration_s };
+        : playback
+          ? { start: playback.start_s, end: Math.min(json.duration_s, playback.start_s + playback.length_s) }
+          : { start: Number((json.duration_s - HOOK_WINDOW_S).toFixed(2)), end: json.duration_s };
     json.truth_lock = { mode: "crossfade_to_source", frames: rules.job_defaults.truth_lock_frames };
     json.est_cost = hookEstimate(json.generation_path, json.concept_id);
     json.disclosure_label =
@@ -437,6 +458,8 @@ export async function runB5(jobId, { truth, persona, assets, formats, excluded }
         );
       }
 
+      normaliseDurations(json);
+
       /* Nothing is ever silently dropped. The dedupe losers were excluded before B5
          ever saw them, so their reasons are merged in here rather than lost. */
       const seen = new Set((json.exclusions || []).map((e) => e.photo_id));
@@ -451,6 +474,36 @@ export async function runB5(jobId, { truth, persona, assets, formats, excluded }
     },
     { schema: "ShotList", model: FLASH, parents: ["B1", "B2", "B3"] },
   );
+}
+
+/** ShotList.slot -> the rules.json tiers key that sets its length. */
+const SLOT_DURATION_KEY = {
+  hook: "hook_s",
+  exterior_title: "exterior_title_s",
+  proof: "interior_s",
+  interior: "interior_s",
+  amenity: "interior_s",
+  floor_plan: "floor_plan_s",
+  exterior_return: "exterior_return_s",
+  aerial_topdown: "aerial_s",
+  aerial_wide: "aerial_s",
+  cta_card: "cta_s",
+};
+
+/**
+ * Shot lengths are rules.json arithmetic, not the model's. B5 copied the tier table into
+ * duration_by_tier and mostly got it right, but a rules change (v1.5 lengthened every
+ * room) must reach the next shot list whatever the model remembers.
+ */
+export function normaliseDurations(shotList) {
+  for (const shot of shotList.shots || []) {
+    const key = SLOT_DURATION_KEY[shot.slot];
+    if (!key) continue;
+    shot.duration_by_tier = Object.fromEntries(
+      Object.entries(rules.tiers).map(([tier, spec]) => [tier, spec[key] ?? shot.duration_by_tier?.[tier] ?? 2]),
+    );
+  }
+  return shotList;
 }
 
 /* ------------------------------------------------------------------ B6 */
@@ -497,6 +550,7 @@ export async function runB6(
       });
       if (!json) throw new Error(`B6:${reelN} returned unparseable JSON`);
       json.reel_n = reelN;
+      shapeCards(json);
 
       const problems = auditClaims(json, validIds, truth.market);
       /* Defects: not one word of them, and no citation of one. A failure here goes back

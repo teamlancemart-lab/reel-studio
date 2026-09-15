@@ -38,6 +38,8 @@ export const config = {
   fontsDir: process.env.FONTS_DIR || path.join(SERVICE_ROOT, "assets", "fonts"),
   pythonBin: process.env.PYTHON_BIN || "/opt/venv/bin/python3",
   allowedOrigin: process.env.ALLOWED_ORIGIN || "*",
+  /** When set, every non-GET request must carry it in x-studio-key (lib/access.js). */
+  accessKey: process.env.STUDIO_ACCESS_KEY || "",
 
   gcpProjectId: process.env.GCP_PROJECT_ID || "",
   gcpLocation: process.env.GCP_LOCATION || "us-central1",

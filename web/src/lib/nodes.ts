@@ -6,6 +6,7 @@
  * stale with a rebuild cost you can see before you click.
  */
 import { SERVICE_URL } from "./service";
+import { writeHeaders } from "./access";
 import type { ReelRecipe } from "@/shared/recipe";
 
 export interface NodeCard {
@@ -60,7 +61,7 @@ export async function getNodePayload(jobId: string, key: string) {
 export async function saveNodePayload(jobId: string, key: string, payload: unknown) {
   const res = await fetch(`${SERVICE_URL}/jobs/${jobId}/nodes/${key}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: writeHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ payload }),
   });
   const body = await res.json();
@@ -71,6 +72,7 @@ export async function saveNodePayload(jobId: string, key: string, payload: unkno
 export async function regenerateNode(jobId: string, key: string) {
   const res = await fetch(`${SERVICE_URL}/jobs/${jobId}/nodes/${key}/regenerate`, {
     method: "POST",
+    headers: writeHeaders(),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body?.error || `regenerate ${res.status}`);
@@ -80,7 +82,7 @@ export async function regenerateNode(jobId: string, key: string) {
 export async function setNodeLock(jobId: string, key: string, locked: boolean) {
   const res = await fetch(`${SERVICE_URL}/jobs/${jobId}/nodes/${key}/lock`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: writeHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ locked }),
   });
   const body = await res.json();
@@ -99,6 +101,7 @@ export async function getRecipes(
 export async function rebuildRecipes(jobId: string) {
   const res = await fetch(`${SERVICE_URL}/jobs/${jobId}/recipes/rebuild`, {
     method: "POST",
+    headers: writeHeaders(),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body?.error || `rebuild ${res.status}`);

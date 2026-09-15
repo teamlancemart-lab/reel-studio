@@ -128,7 +128,17 @@ export async function buildHook(jobId, reelN, { supersedeReason = null, forceFre
   let approved = null;
   let hint = null;
   for (let attempt = 1; attempt <= maxRerolls + 1; attempt++) {
-    const still = await generateStill({ jobId, reelN, plan, concept, heroPath, workDir, attempt, hint });
+    /* A still or Q1 call that errors (a 2-minute timeout on reel 3 of 253 Brindle) is a
+       failed attempt, not a crash: the loop moves on and the fallback still runs, so the
+       reel always has a hook to export and the reason is on the record. */
+    let still;
+    try {
+      still = await generateStill({ jobId, reelN, plan, concept, heroPath, workDir, attempt, hint });
+    } catch (err) {
+      attempts.push({ attempt, still_path: null, prompt_hint: hint, q1: null, verdict: "error", reason: err.message.slice(0, 300) });
+      emit(jobId, "hook", { reelN, step: "H1/Q1 error", attempt, reason: err.message.slice(0, 300) });
+      continue;
+    }
     attempts.push({
       attempt,
       still_path: still.stillPath,
@@ -145,22 +155,47 @@ export async function buildHook(jobId, reelN, { supersedeReason = null, forceFre
   }
 
   if (!approved) {
+    const why = attempts
+      .map((a) => (a.verdict === "error" ? `attempt ${a.attempt} errored: ${a.reason}` : `attempt ${a.attempt} Q1 rejected: ${a.q1.rejects_found.join("; ")}`))
+      .join(" | ");
     return fallback(jobId, reelN, plan, {
       sourcePhotoPath, workDir, crop, attempts, q2: null, ledgerRowsBefore,
-      because: `Q1 rejected ${attempts.length} stills: ${attempts.at(-1).q1.rejects_found.join("; ")}`,
+      because: `no approved still after ${attempts.length} attempts: ${why}`,
     });
   }
 
-  // 4. Veo: first frame = real hero, last frame = the approved still
-  const forwardPath = await generateClip({ jobId, reelN, plan, heroPath, stillPath: approved.stillPath, workDir });
+  /* 4. Veo: first frame = real hero, last frame = the approved still.
+     A clip that never arrives still ends in a hook: the free fallback, with the reason.
+     On 253 Brindle the drape clip came back blocked by Veo's people filter (the
+     helicopter) and the reel was left with no hook to export. A blocked video is not
+     billed, so it gets one more try; anything else falls back straight away. */
+  let forwardPath = null;
+  const clipErrors = [];
+  for (let tryN = 1; tryN <= 2 && !forwardPath; tryN++) {
+    try {
+      forwardPath = await generateClip({ jobId, reelN, plan, heroPath, stillPath: approved.stillPath, workDir });
+    } catch (err) {
+      clipErrors.push(err.message.slice(0, 300));
+      emit(jobId, "hook", { reelN, step: "H2 failed", attempt: tryN, raiFiltered: Boolean(err.raiFiltered), reason: err.message.slice(0, 300) });
+      if (!err.raiFiltered) break;
+    }
+  }
+  if (!forwardPath) {
+    return fallback(jobId, reelN, plan, {
+      sourcePhotoPath, workDir, crop, attempts, q2: null, ledgerRowsBefore,
+      because: `H2 produced no clip: ${clipErrors.join(" | ")}`,
+    });
+  }
 
   // 5-7. reverse, cut the tail, truth lock
+  const playback = concept.playback ?? {};
   const cut = await cutAndLock({
     forwardPath,
     heroPath,
     outDir: path.join(workDir, "v0"),
-    windowStart: null,
-    windowLength: HOOK_WINDOW_S,
+    windowStart: playback.start_s ?? null,
+    windowLength: playback.length_s ?? HOOK_WINDOW_S,
+    speed: playback.speed ?? 1,
     frames: plan.truth_lock?.frames ?? rules.job_defaults.truth_lock_frames,
   });
   emit(jobId, "hook", {
@@ -169,6 +204,7 @@ export async function buildHook(jobId, reelN, { supersedeReason = null, forceFre
     reversedDuration: +cut.reversedDuration.toFixed(2),
     windowStart: +cut.windowStart.toFixed(2),
     windowLength: cut.windowLength,
+    speed: cut.speed,
     lockAtS: +cut.lockAtS.toFixed(3),
   });
 
@@ -196,6 +232,7 @@ export async function buildHook(jobId, reelN, { supersedeReason = null, forceFre
     reversed_duration_s: cut.reversedDuration,
     window_start_s: cut.windowStart,
     window_length_s: cut.windowLength,
+    playback_speed: cut.speed,
     lock_at_s: cut.lockAtS,
     lock_done_s: cut.lockDoneS,
     truth_lock_frames: cut.frames,

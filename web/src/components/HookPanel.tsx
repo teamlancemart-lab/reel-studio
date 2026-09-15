@@ -206,7 +206,8 @@ function ReelCard({
           {hook.attempts.map((a) => (
             <p key={a.attempt} className={a.verdict === "approved" ? "text-emerald-300" : "text-rose-300"}>
               Q1 attempt {a.attempt}: {a.verdict}
-              {a.q1.rejects_found.length > 0 && ` — ${a.q1.rejects_found.join("; ")}`}
+              {a.q1 && a.q1.rejects_found.length > 0 && ` — ${a.q1.rejects_found.join("; ")}`}
+              {a.reason && ` — ${a.reason}`}
               {a.still_file && (
                 <a className="ml-1 underline" href={fileUrl(jobId, a.still_file)} target="_blank" rel="noreferrer">
                   still
